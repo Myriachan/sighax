@@ -24,6 +24,10 @@
 	// Use MPIR in Windows.
 	#include <mpir.h>
 #else
+	// For priority functions.
+	#include <sys/resource.h>
+	#include <sys/time.h>
+	#include <unistd.h>
 	// Use GMP elsewhere.
 	#include <gmp.h>
 #endif
@@ -379,8 +383,22 @@ void BruteForce(mpz_t modulus)
 }
 
 
+// Lowers this program's priority to idle, so that it won't interfere with normal use
+// of the computer.
+void BackgroundMode()
+{
+#ifdef _WIN32
+	SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS | PROCESS_MODE_BACKGROUND_BEGIN);
+#else
+	setpriority(PRIO_PROCESS, getpid(), 19);
+#endif
+}
+
+
 int main()
 {
+	BackgroundMode();
+
 	mpz_t modulus;
 	mpz_init_set_str(modulus, s_modulusText, 16);
 
