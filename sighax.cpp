@@ -39,6 +39,13 @@ const char s_sample[] =
 	"27A96914769E50864FF4EEA245A5FFA95265D5733EDB0D33D9D1602F5F3CC8E6";
 
 
+template <typename T, size_t S>
+constexpr size_t countof(const T (&)[S])
+{
+	return S;
+}
+
+
 void ReadRandom(void *data, size_t size)
 {
 	FILE *file = std::fopen("/dev/urandom", "rb");
@@ -85,12 +92,15 @@ void DumpNumber(mpz_t number)
 	std::puts("");
 }
 
+volatile bool g_meow = false;
 
 bool IsWhatWeWant(mpz_t number)
 {
 	// NOTE: ToArray outputs little-endian!
 	uint8_t buffer[KEY_SIZE];
 	ToArray(buffer, number);
+
+//if (!g_meow) { return false; }
 
 	if ((buffer[0xFF] != 0x00) || (buffer[0xFE] != 0x02))
 	{
@@ -107,7 +117,7 @@ bool IsWhatWeWant(mpz_t number)
 		}
 	}
 
-	if (zeroIndex <= 4)
+	if ((zeroIndex <= 4) || (zeroIndex >= 0xF5))
 	{
 		return false;
 	}
@@ -117,23 +127,7 @@ bool IsWhatWeWant(mpz_t number)
 		return false;
 	}
 
-	/* Unknown what constraints we need on this byte. It may need to be precise.
-	 * Don't enforce any, for now.
-	 * Note: it probably needs to be > buffer[zeroIndex - 4].
-	 * This may not be checked.
-	 */
-
-	if (0 /*buffer[zeroIndex - 2] < zeroIndex - 2 + 0x20 */) 
-	{
-		return false;
-	}
-
 	if (buffer[zeroIndex - 3] != 0x30)
-	{
-		return false;
-	}
-
-	if (buffer[zeroIndex - 4] < zeroIndex - 4 + 0x20)
 	{
 		return false;
 	}
@@ -147,9 +141,9 @@ void BruteForce(mpz_t modulus)
 	typedef decltype(0u + uint_fast64_t()) CounterType;
 	enum : unsigned { NUM_FACTORS = 64 };
 	enum : unsigned { ALLOC_BITS = (KEY_SIZE * CHAR_BIT) + (sizeof(mp_limb_t) * CHAR_BIT) };
-//	enum : unsigned { NUM_ITERATIONS = 100000 };
-	enum : unsigned { NUM_ITERATIONS = 10000000 };
-//	enum : unsigned long long { NUM_ITERATIONS = static_cast<unsigned long long>(-1) >> 1 };
+//	enum : unsigned long long { NUM_ITERATIONS = 100000 };
+//	enum : unsigned long long { NUM_ITERATIONS = 10000000 };
+	enum : unsigned long long { NUM_ITERATIONS = static_cast<unsigned long long>(-1) >> 1 };
 
 	static_assert(std::numeric_limits<CounterType>::digits >= NUM_FACTORS, "NUM_FACTORS is too small");
 
@@ -226,6 +220,12 @@ void BruteForce(mpz_t modulus)
 	mpz_init2(current, ALLOC_BITS * 2);
 	mpz_set_ui(current, 1);
 
+	mpz_t negative;
+	mpz_init2(negative, ALLOC_BITS);
+
+	mpz_t *possibilities[] = { &current, &negative };
+	bool isNegative[] = { false, true };
+
 	for (unsigned long long iteration = 0; iteration < NUM_ITERATIONS; ++iteration)
 	{
 		CounterType grayPrevious = counter ^ (counter >> 1);
@@ -252,52 +252,63 @@ void BruteForce(mpz_t modulus)
 		mpz_mul(current, current, (on ? forward : backward)[flipIndex]);
 		mpz_mod(current, current, modulus);
 
+		mpz_sub(negative, modulus, current);
+
 		// Is this iteration what we're looking for?
-		if (IsWhatWeWant(current))
+		for (unsigned index = 0; index < countof(possibilities); ++index)
 		{
-			mpz_t test, test2, temp;
-			mpz_init_set_ui(test, 1);
-			mpz_init_set_ui(test2, 1);
-			mpz_init2(temp, ALLOC_BITS);
-			for (int x = 0; x < std::numeric_limits<CounterType>::digits; ++x)
+			mpz_t &checking = *possibilities[index];
+			if (IsWhatWeWant(checking))
 			{
-				CounterType bit = CounterType(1) << x;
-				if (grayCurrent & bit)
+				mpz_t testPower, testBase, temp;
+				mpz_init_set_ui(testPower, 1);
+				mpz_init_set_ui(testBase, 1);
+				mpz_init2(temp, ALLOC_BITS);
+				for (int x = 0; x < std::numeric_limits<CounterType>::digits; ++x)
 				{
-					mpz_mul(test, test, forward[x]);
-					mpz_mod(test, test, modulus);
-					mpz_mul(test2, test2, base[x]);
-					mpz_mod(test2, test2, modulus);
+					CounterType bit = CounterType(1) << x;
+					if (grayCurrent & bit)
+					{
+						mpz_mul(testPower, testPower, forward[x]);
+						mpz_mod(testPower, testPower, modulus);
+						mpz_mul(testBase, testBase, base[x]);
+						mpz_mod(testBase, testBase, modulus);
+					}
 				}
-			}
-			if (mpz_cmp(test, current) != 0)
-			{
-				std::printf("Multiplication build error\n");
-				std::fflush(stdout);
-				std::exit(1);
-			}
-			mpz_powm_ui(temp, test2, s_publicExponent, modulus);
-			if (mpz_cmp(temp, test) != 0)
-			{
-				std::printf("Exponential build error\n");
-				std::fflush(stdout);
-				std::exit(1);
-			}
+				if (isNegative[index])
+				{
+					mpz_sub(testPower, modulus, testPower);
+					mpz_sub(testBase, modulus, testBase);
+				}
+				if (mpz_cmp(testPower, checking) != 0)
+				{
+					std::printf("Multiplication build error\n");
+					std::fflush(stdout);
+					std::exit(1);
+				}
+				mpz_powm_ui(temp, testBase, s_publicExponent, modulus);
+				if (mpz_cmp(temp, testPower) != 0)
+				{
+					std::printf("Exponential build error\n");
+					std::fflush(stdout);
+					std::exit(1);
+				}
 
-			std::printf("Match found!!\n");
-			std::printf("iteration = %llu\n", iteration);
-			std::printf("Buffer:\n");
-			DumpNumber(temp);
-			std::printf("Signature:\n");
-			DumpNumber(test2);
-			std::fflush(stdout);
+				std::printf("Match found!!  (mode=%s)\n", isNegative[index] ? "positive" : "negative");
+				std::printf("iteration = %llu\n", iteration);
+				std::printf("Buffer:\n");
+				DumpNumber(temp);
+				std::printf("Signature:\n");
+				DumpNumber(testBase);
+				std::fflush(stdout);
 
-			mpz_clears(test, test2, nullptr);
-			//break;
+				mpz_clears(testPower, testBase, temp, nullptr);
+				//break;
+			}
 		}
 	}
 
-	mpz_clear(current);
+	mpz_clears(current, negative, nullptr);
 	for (unsigned x = 0; x < NUM_FACTORS; ++x)
 	{
 		mpz_clears(base[x], forward[x], backward[x], nullptr);
