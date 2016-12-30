@@ -138,6 +138,7 @@ void BruteForce(mpz_t modulus)
 	static_assert(std::numeric_limits<CounterType>::digits >= NUM_FACTORS, "NUM_FACTORS is too small");
 
 	std::printf("Randomly choosing base factors...\n");
+	std::fflush(stdout);
 
 	mpz_t base[NUM_FACTORS];
 	mpz_t forward[NUM_FACTORS];
@@ -201,6 +202,7 @@ void BruteForce(mpz_t modulus)
 	}
 
 	std::printf("Brute-forcing...\n");
+	std::fflush(stdout);
 
 	CounterType counter = 0;
 
@@ -272,6 +274,7 @@ void BruteForce(mpz_t modulus)
 			DumpNumber(temp);
 			std::printf("Signature:\n");
 			DumpNumber(test2);
+			std::fflush(stdout);
 
 			mpz_clears(test, test2, nullptr);
 			//break;
@@ -296,7 +299,7 @@ int main()
 
 	mpz_powm_ui(sample, sample, s_publicExponent, modulus);
 
-	DumpNumber(sample);
+	//DumpNumber(sample);
 
 	BruteForce(modulus);
 
