@@ -6,6 +6,7 @@
 // * SciresM: Insight into possible valid signatures (IsWhatWeWant).
 // * plutoo: Hint on doing negation to get more bang for the mpz_mul buck.
 // * Normmatt: Ported to Windows.
+// * derrek: For finding the SigHax flaw in boot9 in the first place. <3
 
 #include <cinttypes>
 #include <climits>
