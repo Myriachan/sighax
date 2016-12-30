@@ -7,6 +7,10 @@
 #include <limits>
 #include <gmp.h>
 
+#ifdef _MSC_VER
+	#include <intrin.h>
+#endif
+
 using std::size_t;
 using std::uint8_t;
 using std::uint32_t;
@@ -48,6 +52,20 @@ constexpr size_t countof(const T (&)[S])
 
 void ReadRandom(void *data, size_t size)
 {
+#ifdef _WIN32
+	// You might need to link advapi32.lib (-ladvapi32 in GCC).
+	extern "C" __declspec(dllimport) char __stdcall SystemFunction036(void *, unsigned long);
+
+	if (size > (std::numeric_limits<unsigned long>::max)())
+	{
+		std::abort();
+	}
+
+	if (!SystemFunction036(data, static_cast<unsigned long>(size)))
+	{
+		std::abort();
+	}
+#else
 	FILE *file = std::fopen("/dev/urandom", "rb");
 	if (!file)
 	{
@@ -61,6 +79,21 @@ void ReadRandom(void *data, size_t size)
 	}
 
 	std::fclose(file);
+#endif
+}
+
+
+int CountLeadingZeros(uint64_t value)
+{
+#ifdef _MSC_VER
+	unsigned long result;
+	_BitScanReverse64(&result, value);
+	return std::numeric_limits<decltype(value)>::digits - 1 - static_cast<int>(result);
+#elif defined(__GNUC__) || defined(__clang__)
+	return __builtin_clzll(value);
+#else
+	#error "Unknown compiler"
+#endif	
 }
 
 
@@ -241,7 +274,7 @@ void BruteForce(mpz_t modulus)
 			std::exit(1);
 		}
 
-		int flipIndex = std::numeric_limits<CounterType>::digits - 1 - __builtin_clzll(flip);
+		int flipIndex = std::numeric_limits<CounterType>::digits - 1 - CountLeadingZeros(flip);
 
 		// Determine whether the bit is being turned on or off.
 		bool on = flip & grayCurrent;
