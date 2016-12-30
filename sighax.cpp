@@ -117,7 +117,23 @@ bool IsWhatWeWant(mpz_t number)
 		return false;
 	}
 
-	if (buffer[zeroIndex - 2] < zeroIndex - 2 + 0x20)
+	/* Unknown what constraints we need on this byte. It may need to be precise.
+	 * Don't enforce any, for now.
+	 * Note: it probably needs to be > buffer[zeroIndex - 4].
+	 * This may not be checked.
+	 */
+
+	if (0 /*buffer[zeroIndex - 2] < zeroIndex - 2 + 0x20 */) 
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 3] != 0x30)
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 4] < zeroIndex - 4 + 0x20)
 	{
 		return false;
 	}
@@ -132,8 +148,8 @@ void BruteForce(mpz_t modulus)
 	enum : unsigned { NUM_FACTORS = 64 };
 	enum : unsigned { ALLOC_BITS = (KEY_SIZE * CHAR_BIT) + (sizeof(mp_limb_t) * CHAR_BIT) };
 //	enum : unsigned { NUM_ITERATIONS = 100000 };
-//	enum : unsigned { NUM_ITERATIONS = 1000000 };
-	enum : unsigned long long { NUM_ITERATIONS = static_cast<unsigned long long>(-1) >> 1 };
+	enum : unsigned { NUM_ITERATIONS = 10000000 };
+//	enum : unsigned long long { NUM_ITERATIONS = static_cast<unsigned long long>(-1) >> 1 };
 
 	static_assert(std::numeric_limits<CounterType>::digits >= NUM_FACTORS, "NUM_FACTORS is too small");
 
