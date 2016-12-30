@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <gmp.h>
 
 using std::size_t;
@@ -38,6 +39,24 @@ const char s_sample[] =
 	"27A96914769E50864FF4EEA245A5FFA95265D5733EDB0D33D9D1602F5F3CC8E6";
 
 
+void ReadRandom(void *data, size_t size)
+{
+	FILE *file = std::fopen("/dev/urandom", "rb");
+	if (!file)
+	{
+		std::abort();
+	}
+
+	if (std::fread(data, 1, size, file) != size)
+	{
+		std::fclose(file);
+		std::abort();
+	}
+
+	std::fclose(file);
+}
+
+
 void ToArray(uint8_t (&buffer)[KEY_SIZE], mpz_t number)
 {
 	size_t bits = mpz_sizeinbase(number, 2);
@@ -67,32 +86,212 @@ void DumpNumber(mpz_t number)
 }
 
 
-void BruteForce(mpz_t modulus)
+bool IsWhatWeWant(mpz_t number)
 {
-	uint64_t start;
-	static_assert(sizeof(start) <= sizeof(unsigned long), "bad size for GMP");
+	// NOTE: ToArray outputs little-endian!
+	uint8_t buffer[KEY_SIZE];
+	ToArray(buffer, number);
 
-	start = static_cast<decltype(0u + uint64_t())>(1) << 56;
-
-	mpz_t current;
-	mpz_init_set_ui(current, static_cast<unsigned long>(start));
-
-	mpz_t result;
-	mpz_init2(result, (KEY_SIZE * CHAR_BIT) + (sizeof(mp_limb_t) * CHAR_BIT));
-
-	for (unsigned x = 0; x < 1000000; ++x)
+	if (/*(buffer[0xFF] != 0x00) ||*/ (buffer[0xFE] != 0x02))
 	{
-		if (x % 100000 == 0) std::printf("%8u\n", x);
-
-		mpz_powm_ui(result, current, s_publicExponent, modulus);
-
-		uint8_t bytes[KEY_SIZE];
-		ToArray(bytes, result);
-
-		mpz_add_ui(current, current, 1);
+		return false;
 	}
 
-	mpz_clears(current, result, nullptr);
+	// Find streak of nonzero values
+	unsigned zeroIndex;
+	for (zeroIndex = 0xFD; zeroIndex > 4; --zeroIndex)
+	{
+		if (buffer[zeroIndex] == 0x00)
+		{
+			break;
+		}
+	}
+
+	if (zeroIndex <= 4)
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 1] != 0x30)
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 2] != 0x31)
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 3] != 0x30)
+	{
+		return false;
+	}
+
+	if (buffer[zeroIndex - 4] != zeroIndex - 4)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+
+void BruteForce(mpz_t modulus)
+{
+	typedef decltype(0u + uint_fast64_t()) CounterType;
+	enum : unsigned { NUM_FACTORS = 64 };
+	enum : unsigned { ALLOC_BITS = (KEY_SIZE * CHAR_BIT) + (sizeof(mp_limb_t) * CHAR_BIT) };
+//	enum : unsigned { NUM_ITERATIONS = 100000 };
+//	enum : unsigned { NUM_ITERATIONS = 1000000 };
+	enum : unsigned long long { NUM_ITERATIONS = static_cast<unsigned long long>(-1) >> 1 };
+
+	static_assert(std::numeric_limits<CounterType>::digits >= NUM_FACTORS, "NUM_FACTORS is too small");
+
+	std::printf("Randomly choosing base factors...\n");
+
+	mpz_t base[NUM_FACTORS];
+	mpz_t forward[NUM_FACTORS];
+	mpz_t backward[NUM_FACTORS];
+
+	for (unsigned x = 0; x < NUM_FACTORS; ++x)
+	{
+		for (;;)
+		{
+			uint8_t random[KEY_SIZE];
+			ReadRandom(random, sizeof(random));
+
+			mpz_init2(base[x], ALLOC_BITS);
+			mpz_import(base[x], KEY_SIZE, 1, 1, 1, 0, random);
+			mpz_mod(base[x], base[x], modulus);
+
+			if (mpz_cmp_si(base[x], 1) <= 0)
+			{
+			my_continue:
+				continue;
+			}
+
+			for (unsigned y = 0; y < x; ++y)
+			{
+				if (mpz_cmp(base[y], base[x]) == 0)
+				{
+					goto my_continue;
+				}
+			}
+
+			break;
+		}
+
+		mpz_init2(forward[x], ALLOC_BITS);
+		mpz_powm_ui(forward[x], base[x], s_publicExponent, modulus);
+
+		mpz_init2(backward[x], ALLOC_BITS);
+		if (mpz_invert(backward[x], forward[x], modulus) == 0)
+		{
+			// You're more likely to win the lottery several times in a row
+			// than for this to happen.
+			std::printf("Public key factored by accident!!!  Give this to Myria!\n");
+			DumpNumber(forward[x]);
+			std::fflush(stdout);
+			std::exit(1);
+		}
+
+		// Self-test
+		mpz_t test;
+		mpz_init2(test, ALLOC_BITS * 2);
+		mpz_mul(test, forward[x], backward[x]);
+		mpz_mod(test, test, modulus);
+		if (mpz_cmp_si(test, 1) != 0)
+		{
+			std::printf("Self-test error\n");
+			DumpNumber(base[x]);
+			std::fflush(stdout);
+			std::exit(1);
+		}
+		mpz_clear(test);
+	}
+
+	std::printf("Brute-forcing...\n");
+
+	CounterType counter = 0;
+
+	mpz_t current;
+	mpz_init2(current, ALLOC_BITS * 2);
+	mpz_set_ui(current, 1);
+
+	for (unsigned long long iteration = 0; iteration < NUM_ITERATIONS; ++iteration)
+	{
+		CounterType grayPrevious = counter ^ (counter >> 1);
+		++counter;
+		CounterType grayCurrent = counter ^ (counter >> 1);
+
+		CounterType flip = grayCurrent ^ grayPrevious;
+
+		if ((flip == 0) || ((flip & (flip - 1)) != 0))
+		{
+			std::printf("Gray counter error\n");
+			std::fflush(stdout);
+			std::exit(1);
+		}
+
+		int flipIndex = std::numeric_limits<CounterType>::digits - 1 - __builtin_clzll(flip);
+
+		// Determine whether the bit is being turned on or off.
+		bool on = flip & grayCurrent;
+
+//		std::printf("%3llu: %08X %08X %08X %d %d\n", iteration, (unsigned) counter, (unsigned) grayCurrent, (unsigned) flip, flipIndex, on);
+
+		// Calculate next iteration.
+		mpz_mul(current, current, (on ? forward : backward)[flipIndex]);
+		mpz_mod(current, current, modulus);
+
+		// Is this iteration what we're looking for?
+		if (IsWhatWeWant(current))
+		{
+			mpz_t test, test2, temp;
+			mpz_init_set_ui(test, 1);
+			mpz_init_set_ui(test2, 1);
+			mpz_init2(temp, ALLOC_BITS);
+			for (int x = 0; x < std::numeric_limits<CounterType>::digits; ++x)
+			{
+				CounterType bit = CounterType(1) << x;
+				if (grayCurrent & bit)
+				{
+					mpz_mul(test, test, forward[x]);
+					mpz_mod(test, test, modulus);
+					mpz_mul(test2, test2, base[x]);
+					mpz_mod(test2, test2, modulus);
+				}
+			}
+			if (mpz_cmp(test, current) != 0)
+			{
+				std::printf("Multiplication build error\n");
+				std::fflush(stdout);
+				std::exit(1);
+			}
+			mpz_powm_ui(temp, test2, s_publicExponent, modulus);
+			if (mpz_cmp(temp, test) != 0)
+			{
+				std::printf("Exponential build error\n");
+				std::fflush(stdout);
+				std::exit(1);
+			}
+			mpz_clears(test, test2, nullptr);
+
+			std::printf("Match found!!\n");
+			std::printf("iteration = %llu\n", iteration);
+			std::printf("Buffer:\n");
+			DumpNumber(temp);
+			std::printf("Signature:\n");
+			DumpNumber(test2);
+			break;
+		}
+	}
+
+	mpz_clear(current);
+	for (unsigned x = 0; x < NUM_FACTORS; ++x)
+	{
+		mpz_clears(base[x], forward[x], backward[x], nullptr);
+	}
 }
 
 
