@@ -14,13 +14,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
-#include <gmp.h>
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
 	#define NOGDI
 	#define NOUSER
 	#include <Windows.h>
+
+	// Use MPIR in Windows.
+	#include <mpir.h>
+#else
+	// Use GMP elsewhere.
+	#include <gmp.h>
 #endif
 
 #ifdef _MSC_VER
@@ -302,7 +307,7 @@ void BruteForce(mpz_t modulus)
 		int flipIndex = std::numeric_limits<CounterType>::digits - 1 - CountLeadingZeros(flip);
 
 		// Determine whether the bit is being turned on or off.
-		bool on = flip & grayCurrent;
+		bool on = (flip & grayCurrent) != 0;
 
 //		std::printf("%3llu: %08X %08X %08X %d %d\n", iteration, (unsigned) counter, (unsigned) grayCurrent, (unsigned) flip, flipIndex, on);
 
