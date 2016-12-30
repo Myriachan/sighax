@@ -92,7 +92,7 @@ bool IsWhatWeWant(mpz_t number)
 	uint8_t buffer[KEY_SIZE];
 	ToArray(buffer, number);
 
-	if (/*(buffer[0xFF] != 0x00) ||*/ (buffer[0xFE] != 0x02))
+	if ((buffer[0xFF] != 0x00) || (buffer[0xFE] != 0x02))
 	{
 		return false;
 	}
@@ -117,17 +117,7 @@ bool IsWhatWeWant(mpz_t number)
 		return false;
 	}
 
-	if (buffer[zeroIndex - 2] != 0x31)
-	{
-		return false;
-	}
-
-	if (buffer[zeroIndex - 3] != 0x30)
-	{
-		return false;
-	}
-
-	if (buffer[zeroIndex - 4] != zeroIndex - 4)
+	if (buffer[zeroIndex - 2] < zeroIndex - 2 + 0x20)
 	{
 		return false;
 	}
@@ -275,7 +265,6 @@ void BruteForce(mpz_t modulus)
 				std::fflush(stdout);
 				std::exit(1);
 			}
-			mpz_clears(test, test2, nullptr);
 
 			std::printf("Match found!!\n");
 			std::printf("iteration = %llu\n", iteration);
@@ -283,7 +272,9 @@ void BruteForce(mpz_t modulus)
 			DumpNumber(temp);
 			std::printf("Signature:\n");
 			DumpNumber(test2);
-			break;
+
+			mpz_clears(test, test2, nullptr);
+			//break;
 		}
 	}
 
