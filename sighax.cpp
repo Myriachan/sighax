@@ -1,3 +1,12 @@
+// SigHax brute-forcer by Myria.
+// BSD-licensed.
+//
+// Credits:
+// * Myria: Main author.
+// * SciresM: Insight into possible valid signatures (IsWhatWeWant).
+// * plutoo: Hint on doing negation to get more bang for the mpz_mul buck.
+// * Normmatt: Ported to Windows.
+
 #include <cinttypes>
 #include <climits>
 #include <cstdint>
@@ -6,6 +15,13 @@
 #include <cstring>
 #include <limits>
 #include <gmp.h>
+
+#ifdef _WIN32
+	#define _WIN32_WINNT 0x0601
+	#define NOGDI
+	#define NOUSER
+	#include <Windows.h>
+#endif
 
 #ifdef _MSC_VER
 	#include <intrin.h>
@@ -50,32 +66,39 @@ constexpr size_t countof(const T (&)[S])
 }
 
 
+#ifdef _WIN32
+	// Because NTSecAPI.h has an incorrect prototype (missing __stdcall).
+	extern "C" __declspec(dllimport) BOOLEAN NTAPI SystemFunction036(PVOID, ULONG);
+#endif
+
+
 void ReadRandom(void *data, size_t size)
 {
 #ifdef _WIN32
 	// You might need to link advapi32.lib (-ladvapi32 in GCC).
-	extern "C" __declspec(dllimport) char __stdcall SystemFunction036(void *, unsigned long);
-
 	if (size > (std::numeric_limits<unsigned long>::max)())
 	{
-		std::abort();
+		std::printf("ReadRandom size too large: %llu\n", static_cast<unsigned long long>(size));
+		std::exit(1);
 	}
 
 	if (!SystemFunction036(data, static_cast<unsigned long>(size)))
 	{
-		std::abort();
+		std::printf("RtlGenRandom failed\n");
+		std::exit(1);
 	}
 #else
 	FILE *file = std::fopen("/dev/urandom", "rb");
 	if (!file)
 	{
-		std::abort();
+		std::printf("Could not open /dev/urandom\n");
+		std::exit(1);
 	}
 
 	if (std::fread(data, 1, size, file) != size)
 	{
-		std::fclose(file);
-		std::abort();
+		std::printf("Reading from /dev/urandom failed\n");
+		std::exit(1);
 	}
 
 	std::fclose(file);
@@ -125,6 +148,8 @@ void DumpNumber(mpz_t number)
 	std::puts("");
 }
 
+
+// Testing flag.
 volatile bool g_meow = false;
 
 bool IsWhatWeWant(mpz_t number)
