@@ -35,10 +35,6 @@
 	#include <gmp.h>
 #endif
 
-#ifdef _MSC_VER
-	#include <intrin.h>
-#endif
-
 using std::size_t;
 using std::uint8_t;
 using std::uint32_t;
@@ -128,20 +124,6 @@ void ReadRandom(void *data, size_t size)
 
 	std::fclose(file);
 #endif
-}
-
-
-int CountLeadingZeros(uint64_t value)
-{
-#ifdef _MSC_VER
-	unsigned long result;
-	_BitScanReverse64(&result, value);
-	return std::numeric_limits<decltype(value)>::digits - 1 - static_cast<int>(result);
-#elif defined(__GNUC__) || defined(__clang__)
-	return __builtin_clzll(value);
-#else
-	#error "Unknown compiler"
-#endif	
 }
 
 
