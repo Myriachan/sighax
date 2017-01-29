@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <limits>
+#include <type_traits>
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
@@ -53,8 +54,9 @@ const char s_signature[] =
 typedef std::uint32_t Limb;
 typedef std::uint64_t DoubleLimb;
 
+enum { MODULUS_BITS = 2048 };
 enum { LIMB_BITS = std::numeric_limits<Limb>::digits };
-enum { LIMB_COUNT = 2048 / LIMB_BITS };
+enum { LIMB_COUNT = MODULUS_BITS / LIMB_BITS };
 
 template <unsigned Bits>
 struct BitsToLimbs
@@ -74,138 +76,177 @@ constexpr size_t countof(const T(&)[S])
 }
 
 
-Limb MultiplyHighHelper(Limb a, Limb b)
+#ifdef _WIN32
+// Because NTSecAPI.h has an incorrect prototype (missing __stdcall).
+extern "C" __declspec(dllimport) BOOLEAN NTAPI SystemFunction036(PVOID, ULONG);
+#endif
+
+
+void ReadRandom(void *data, size_t size)
+{
+#ifdef _WIN32
+	// You might need to link advapi32.lib (-ladvapi32 in GCC).
+	if (size > (std::numeric_limits<unsigned long>::max)())
+	{
+		std::printf("ReadRandom size too large: %llu\n", static_cast<unsigned long long>(size));
+		std::exit(1);
+	}
+
+	if (!SystemFunction036(data, static_cast<unsigned long>(size)))
+	{
+		std::printf("RtlGenRandom failed\n");
+		std::exit(1);
+	}
+#else
+	FILE *file = std::fopen("/dev/urandom", "rb");
+	if (!file)
+	{
+		std::printf("Could not open /dev/urandom\n");
+		std::exit(1);
+	}
+
+	if (std::fread(data, 1, size, file) != size)
+	{
+		std::printf("Reading from /dev/urandom failed\n");
+		std::exit(1);
+	}
+
+	std::fclose(file);
+#endif
+}
+
+
+// Simulation.  GPU will use __umulhi or assembly language for this.
+inline Limb MultiplyHighHelper(Limb a, Limb b)
 {
 	return static_cast<Limb>((static_cast<DoubleLimb>(a) * b) >> LIMB_BITS);
 }
 
 
-Limb AddFullHelper(Limb &dest, Limb a, Limb b, Limb c)
-{
-	DoubleLimb result = a;
-	result += b;
-	result += c;
-	dest = static_cast<Limb>(result);
-	return static_cast<Limb>(result >> 32);
-}
-
-
-Limb SubFullHelper(Limb &dest, Limb a, Limb b, Limb c)
-{
-	DoubleLimb result = a;
-	result -= b;
-	result -= c;
-	dest = static_cast<Limb>(result);
-	return static_cast<Limb>(result >> 32) & 1;
-}
-
-
-template <unsigned Limbs>
-int BigCompareN(const Limb left[Limbs], const Limb right[Limbs])
+template <unsigned LimbCount>
+void ConditionalSubtract(Limb left[LimbCount], const Limb right[LimbCount], Limb mask)
 {
 	Limb borrow = 0;
-	Limb notEqual = 0;
+
+	for (unsigned x = 0; x < LimbCount; ++x)
+	{
+		DoubleLimb current = left[x];
+		current -= borrow;
+		current -= (right[x] & mask);
+		left[x] = static_cast<Limb>(current);
+
+		borrow = static_cast<Limb>(current >> 32) & 1;
+	}
+}
+
+
+template <unsigned Limbs>
+int GetIsGreaterOrEqualMask(const Limb left[Limbs], const Limb right[Limbs])
+{
+	Limb borrow = 0;
 
 	for (unsigned x = 0; x < Limbs; ++x)
 	{
 		DoubleLimb current = left[x];
 		current -= borrow;
 		current -= right[x];
-		notEqual |= static_cast<Limb>(current);
 
 		borrow = static_cast<Limb>(current >> 32) & 1;
 	}
 
-	if (borrow)
-	{
-		return -1;
-	}
-	else if (notEqual)
-	{
-		return 1;
-	}
-	else
-	{
-		return 0;
-	}
+	return borrow - 1;
 }
 
 
-template <unsigned Limbs>
-Limb BigSubtractN(Limb dest[Limbs], const Limb left[Limbs], const Limb right[Limbs], Limb borrow)
+// From Kaiyong Zhao's Algorithm 3.
+template <unsigned LimbCount, bool Meow>
+void MontgomeryModularMultiply(Limb output[LimbCount + 2], const Limb a[LimbCount], const Limb b[LimbCount], const Limb modulus[LimbCount], Limb modulusInverseR0)
 {
-	for (unsigned x = 0; x < Limbs; ++x)
+	for (unsigned i = 0; i < LimbCount; ++i)
 	{
-		DoubleLimb current = left[x];
-		current -= borrow;
-		current -= right[x];
-		dest[x] = static_cast<Limb>(current);
-
-		borrow = static_cast<Limb>(current >> 32) & 1;
-	}
-
-	return borrow;
-}
-
-
-template <unsigned LeftLimbs, unsigned RightLimbs>
-void BigMultiplyMN(Limb dest[LeftLimbs + RightLimbs], const Limb left[LeftLimbs], const Limb right[RightLimbs])
-{
-	static_assert(LeftLimbs > 0, "invalid LeftLimbs");
-	static_assert(RightLimbs > 0, "invalid RightLimbs");
-
-	DoubleLimb result[LeftLimbs + RightLimbs] = {};
-
-	for (unsigned r = 0; r < RightLimbs; ++r)
-	{
-		Limb multiplier = right[r];
-
-		for (unsigned l = 0; l < LeftLimbs; ++l)
+		// Multiplication loop.
+		if (i == 0 && Meow)
 		{
-			result[r + l] += left[l] * multiplier;
+			// In the first round, we need to initialize the output.
+			// The document says that "t" (output) needs to be initialized to
+			// zero, but we can just set it in this loop instead of adding.
+			// This conditional branch will be synched across threads.
+			Limb carry = 0;
+			for (unsigned j = 0; j < LimbCount; ++j)
+			{
+				Limb low = a[j] * b[i];
+				Limb high = MultiplyHighHelper(a[j], b[i]);
+				DoubleLimb product = (static_cast<DoubleLimb>(high) << 32) + low;
+				product += carry;
+				output[j] = static_cast<Limb>(product);
+				carry = static_cast<Limb>(product >> 32);
+			}
+			output[LimbCount] = carry;
+			output[LimbCount + 1] = 0;
+		}
+		else
+		{
+			Limb carry = 0;
+			for (unsigned j = 0; j < LimbCount; ++j)
+			{
+				Limb low = a[j] * b[i];
+				Limb high = MultiplyHighHelper(a[j], b[i]);
+				DoubleLimb product = (static_cast<DoubleLimb>(high) << 32) + low;
+				product += carry;
+				product += output[j];
+				output[j] = static_cast<Limb>(product);
+				carry = static_cast<Limb>(product >> 32);
+			}
+			DoubleLimb sum = output[LimbCount];
+			sum += carry;
+			output[LimbCount] = static_cast<Limb>(sum);
+			output[LimbCount + 1] = static_cast<Limb>(sum >> 32);
 		}
 
-		for (unsigned l = 0; l < LeftLimbs; ++l)
+		// Reduction loop.
+		// NOTE: This comes from the optimized version in the document
+		// discussed below the algorithm itself.
+		Limb carry = 0;
+		Limb m = 1u * output[0] * modulusInverseR0;
+
+		// First limb, which gets discarded in the end.
 		{
-			result[r + l + 1] += MultiplyHighHelper(left[l], multiplier);
+			Limb low = m * modulus[0];
+			Limb high = MultiplyHighHelper(m, modulus[0]);
+			DoubleLimb product = (static_cast<DoubleLimb>(high) << 32) + low;
+			product += output[0];
+			carry = static_cast<Limb>(product >> 32);
 		}
+
+		// The rest of the limbs.
+		for (unsigned j = 1; j < LimbCount; ++j)
+		{
+			Limb low = m * modulus[j];
+			Limb high = MultiplyHighHelper(m, modulus[j]);
+			DoubleLimb product = (static_cast<DoubleLimb>(high) << 32) + low;
+			product += carry;
+			product += output[j];
+			output[j - 1] = static_cast<Limb>(product);
+			carry = static_cast<Limb>(product >> 32);
+		}
+
+		DoubleLimb sum = output[LimbCount];
+		sum += carry;
+		output[LimbCount - 1] = static_cast<Limb>(sum);
+		output[LimbCount] = output[LimbCount + 1] + static_cast<Limb>(sum >> 32);
 	}
 
-	DoubleLimb accumulator = 0;
-	for (unsigned x = 0; x < LeftLimbs + RightLimbs; ++x)
-	{
-		accumulator += result[x];
-		dest[x] = static_cast<Limb>(accumulator);
-		accumulator >>= 32;
-	}
+	// The result might be larger than the modulus.  If so, subtract the modulus.
+	Limb subtractMask = GetIsGreaterOrEqualMask<LimbCount>(output, modulus);
+
+	// output[LimbCount] could also be 1, which obviously makes it larger.
+	subtractMask |= 0u - output[LimbCount];
+
+	ConditionalSubtract<LimbCount>(output, modulus, subtractMask);
 }
 
 
-template <unsigned Limbs>
-void BarrettReduce(Limb remainder[Limbs], const Limb dividend[Limbs * 2], const Limb modulus[Limbs], const Limb inverse[Limbs + 1])
-{
-	Limb result[Limbs * 3 + 1 + 1];
-	BigMultiplyMN<Limbs * 2, Limbs + 1>(&result[1], dividend, inverse);
-
-	BigMultiplyMN<Limbs + 1, Limbs>(&result[0], &result[Limbs * 2 + 1], modulus);
-
-	BigSubtractN<Limbs + 1>(&result[0], &dividend[0], &result[0], 0);
-
-	if ((BigCompareN<Limbs>(&result[0], &modulus[0]) >= 0) || (result[Limbs] > 0))
-	{
-		BigSubtractN<Limbs>(&remainder[0], &result[0], &modulus[0], 0);
-	}
-	else
-	{
-		for (unsigned x = 0; x < Limbs; ++x)
-		{
-			remainder[x] = result[x];
-		}
-	}
-}
-
-
-// Exports a mpz_t as an array of mp_limb_t for mpn_* use.
+// Exports an mpz_t as an array of mp_limb_t for mpn_* use.
 template <size_t S>
 void ToLimbArray(mp_limb_t(&limbs)[S], mpz_t number)
 {
@@ -219,6 +260,14 @@ void ToLimbArray(mp_limb_t(&limbs)[S], mpz_t number)
 	std::memset(&limbs[count], 0, (S - count) * sizeof(mp_limb_t));
 }
 
+// Imports a buffer from a limb array to an mpz_t.
+template <size_t S>
+void FromLimbArray(mpz_t number, const mp_limb_t(&limbs)[S])
+{
+	mpz_import(number, S, -1, sizeof(limbs[0]), 0, 0, limbs);
+}
+
+
 template <unsigned S>
 union Number
 {
@@ -227,69 +276,95 @@ union Number
 };
 
 
+class MPZNumber
+{
+public:
+	MPZNumber()
+	{
+		mpz_init2(m_gmp, MODULUS_BITS);
+	}
+
+	~MPZNumber()
+	{
+		mpz_clear(m_gmp);
+	}
+
+	operator std::remove_extent_t<mpz_t> *() { return m_gmp; }
+
+private:
+	mpz_t m_gmp;
+};
+
+
 int main()
 {
 	// Initialize constants.
-	mpz_t gmpModulus;
-	mpz_init_set_str(gmpModulus, s_modulusText, 16);
+	MPZNumber gmpModulus;
+	mpz_set_str(gmpModulus, s_modulusText, 16);
 
-	mpz_t gmpSignature;
-	mpz_init_set_str(gmpSignature, s_signature, 16);
+	MPZNumber gmpSignature;
+	mpz_set_str(gmpSignature, s_signature, 16);
 
-	mpz_t gmpBlock;
-	mpz_init(gmpBlock);
+	MPZNumber gmpBlock;
 	mpz_powm_ui(gmpBlock, gmpSignature, s_publicExponent, gmpModulus);
 
-	mpz_t gmpInverse;
-	mpz_init(gmpInverse);
-	mpz_setbit(gmpInverse, 4096);
-	mpz_tdiv_q(gmpInverse, gmpInverse, gmpModulus);
+	MPZNumber gmpR;
+	mpz_setbit(gmpR, MODULUS_BITS);
+
+	MPZNumber gmpInverse;
+	mpz_invert(gmpInverse, gmpModulus, gmpR);
+	mpz_sub(gmpInverse, gmpR, gmpInverse);
+
+	MPZNumber gmpRModModulus;
+	mpz_mod(gmpRModModulus, gmpR, gmpModulus);
+
+	MPZNumber gmpRInverse;
+	mpz_invert(gmpRInverse, gmpRModModulus, gmpModulus);
 
 	Number<LIMB_COUNT> modulus;
 	ToLimbArray(modulus.m_gmp, gmpModulus);
 
-	Number<LIMB_COUNT> signature;
-	ToLimbArray(signature.m_gmp, gmpSignature);
-
-	Number<LIMB_COUNT> block;
-	ToLimbArray(block.m_gmp, gmpBlock);
-
-	Number<LIMB_COUNT + 1> inverse;
+	Number<LIMB_COUNT> inverse;
 	ToLimbArray(inverse.m_gmp, gmpInverse);
 
-	// Main code
+	Limb modulusInverseR0 = inverse.m_limbs[0];
+
 	for (unsigned x = 0; x < 100000; ++x)
 	{
-		Number<2048 / LIMB_BITS> multiplicand;
-		Number<4096 / LIMB_BITS> mySquare;
-		Number<4096 / LIMB_BITS> gmpSquare;
-		Number<2048 / LIMB_BITS> myResult;
-		Number<2048 / LIMB_BITS> gmpResult;
-		Number<4096 / LIMB_BITS> dummyQuotient;
+		// Generate random numbers a and b.
+		MPZNumber gmpA;
+		Number<LIMB_COUNT> a;
+		ReadRandom(a.m_limbs, sizeof(a.m_limbs));
+		FromLimbArray(gmpA, a.m_gmp);
+		mpz_mod(gmpA, gmpA, gmpModulus);
+		ToLimbArray(a.m_gmp, gmpA);
 
-		//std::memset(multiplicand.m_limbs, 0xFF, sizeof(multiplicand.m_limbs));
-		if (x & 1)
-			mpn_random(multiplicand.m_gmp, countof(multiplicand.m_gmp));
-		else
-			mpn_random2(multiplicand.m_gmp, countof(multiplicand.m_gmp));
+		MPZNumber gmpB;
+		Number<LIMB_COUNT> b;
+		ReadRandom(b.m_limbs, sizeof(b.m_limbs));
+		FromLimbArray(gmpB, b.m_gmp);
+		mpz_mod(gmpB, gmpB, gmpModulus);
+		ToLimbArray(b.m_gmp, gmpB);
 
-		BigMultiplyMN<2048 / LIMB_BITS, 2048 / LIMB_BITS>(mySquare.m_limbs, multiplicand.m_limbs, multiplicand.m_limbs);
-		BarrettReduce<2048 / LIMB_BITS>(myResult.m_limbs, mySquare.m_limbs, modulus.m_limbs, inverse.m_limbs);
+		MPZNumber gmpCheck;
+		Number<LIMB_COUNT> check;
+		mpz_mul(gmpCheck, gmpA, gmpB);
+		mpz_mod(gmpCheck, gmpCheck, gmpModulus);
+		mpz_mul(gmpCheck, gmpCheck, gmpRInverse);
+		mpz_mod(gmpCheck, gmpCheck, gmpModulus);
+		ToLimbArray(check.m_gmp, gmpCheck);
 
-		mpn_sqr(gmpSquare.m_gmp, multiplicand.m_gmp, countof(multiplicand.m_gmp));
-		mpn_tdiv_qr(dummyQuotient.m_gmp, gmpResult.m_gmp, 0, gmpSquare.m_gmp, countof(gmpSquare.m_gmp), modulus.m_gmp, countof(modulus.m_gmp));
+		Limb output[LIMB_COUNT + 2];
+		std::memset(output, 0, sizeof(output));
+		MontgomeryModularMultiply<LIMB_COUNT, false>(output, a.m_limbs, b.m_limbs, modulus.m_limbs, modulusInverseR0);
+		std::memset(output, 0xCC, sizeof(output));
+		MontgomeryModularMultiply<LIMB_COUNT, true>(output, a.m_limbs, b.m_limbs, modulus.m_limbs, modulusInverseR0);
 
-		if (std::memcmp(mySquare.m_gmp, gmpSquare.m_gmp, sizeof(mySquare.m_gmp)))
-		{
-			__debugbreak();
-		}
-		if (std::memcmp(myResult.m_gmp, gmpResult.m_gmp, sizeof(myResult.m_gmp)))
+		if (std::memcmp(output, check.m_limbs, sizeof(check.m_limbs)) != 0)
 		{
 			__debugbreak();
 		}
 	}
-
-	mpz_clears(gmpModulus, gmpSignature, gmpBlock, gmpInverse, nullptr);
 
 	return 0;
 }
