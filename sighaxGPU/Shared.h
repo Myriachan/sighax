@@ -6,9 +6,9 @@
 typedef std::uint32_t Limb;
 typedef std::uint64_t DoubleLimb;
 
-enum { TOTAL_BITS = 2048 };
+enum { MODULUS_BITS = 2048 };
 enum { LIMB_BITS = std::numeric_limits<Limb>::digits };
-enum { LIMB_COUNT = TOTAL_BITS / LIMB_BITS };
+enum { LIMB_COUNT = MODULUS_BITS / LIMB_BITS };
 
 template <unsigned Bits>
 struct BitsToLimbs
@@ -29,23 +29,6 @@ constexpr size_t countof(const T(&)[S])
 
 
 enum { NUM_THREADS = 256 };
-enum { NUM_REPEATS = 4 };
-
-struct MathParameters
-{
-	Limb m_modulus[LIMB_COUNT];
-	Limb m_inverse[LIMB_COUNT + 1];
-};
-
-struct OneIteration
-{
-	Limb m_limbs[LIMB_COUNT];
-};
-
-struct TransferBlob
-{
-	OneIteration m_iterations[NUM_THREADS];
-};
 
 
-cudaError_t GPUExecuteOperation(TransferBlob &dest, const TransferBlob &src, const MathParameters &mathParams);
+cudaError_t GPUExecuteOperation(Limb (&dest)[NUM_THREADS * LIMB_COUNT * 2], const Limb (&src)[NUM_THREADS * LIMB_COUNT]);
