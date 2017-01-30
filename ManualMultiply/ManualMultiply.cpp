@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cinttypes>
 #include <climits>
 #include <cstdint>
@@ -6,6 +7,7 @@
 #include <cstring>
 #include <ctime>
 #include <limits>
+#include <string>
 #include <type_traits>
 
 #ifdef _WIN32
@@ -24,6 +26,9 @@
 	// Use GMP elsewhere.
 	#include <gmp.h>
 #endif
+
+// For debugging CUDA code from here.
+enum { NUM_THREADS = 1 };
 
 
 // big-endian
@@ -325,9 +330,9 @@ Limb SubFullHelper(Limb &dest, Limb a, Limb b, Limb c)
 // sub.u32
 #define ins_sub(dest, left, right) dest = left - right;
 // sub.cc.u32
-#define ins_sub_cc(dest, left, right) carryRegister = SubFullHelper(dest, left, right, 0);
+#define ins_sub_cc(dest, left, right) carryRegister = SubFullHelper(dest, left, right, 0) ^ 1;
 // subc.cc.u32
-#define ins_subc_cc(dest, left, right) carryRegister = SubFullHelper(dest, left, right, carryRegister);
+#define ins_subc_cc(dest, left, right) carryRegister = SubFullHelper(dest, left, right, carryRegister) ^ 1;
 // subc.u32
 #define ins_subc(dest, left, right) SubFullHelper(dest, left, right, carryRegister);
 // mul.lo.u32
@@ -669,7 +674,8 @@ void MultiplyStuffKernel(Limb *dest, const Limb *src, const Limb *modulus, Limb 
 	ins_subc(temp, CONSTANT_ZERO, CONSTANT_ZERO);
 
 	// If necessary, subtract.
-	if ((var_temp == 0) || (var_t64 != 0))
+	// carry is 1 if above or equal, 0 if not (6502 semantics, not x86).
+	if ((var_temp != 0) || (var_t64 != 0))
 	{
 		ins_sub_cc(t00, t00, MODULUS_WORD_00);
 
@@ -707,8 +713,656 @@ void MultiplyStuffKernel(Limb *dest, const Limb *src, const Limb *modulus, Limb 
 	STORE_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
 
 	__nop();
+#undef CONSTANT_ZERO
+#undef DECLARE_OUTPUT_ROUND
+#undef DECLARE_OUTPUT_ROUND_9
+#undef MULTIPLY_FIRST_ROUND
+#undef MULTIPLY_FIRST_ROUND_9
+#undef MULTIPLY_ROUND
+#undef MULTIPLY_ROUND_9
+#undef REDUCE_ROUND
+#undef REDUCE_ROUND_9
+#undef COMPARE_ROUND
+#undef COMPARE_ROUND_9
+#undef SUBTRACT_ROUND
+#undef SUBTRACT_ROUND_9
+#undef STORE_ROUND
+#undef STORE_ROUND_9
 }
 
+
+// The 32-bit parts of s_modulus, least-significant first.
+#define TEST2_MODULUS_WORD_00 "0x9BD0EC9BU"
+#define TEST2_MODULUS_WORD_01 "0x045BE017U"
+#define TEST2_MODULUS_WORD_02 "0x3085E8A1U"
+#define TEST2_MODULUS_WORD_03 "0xB2CC3687U"
+#define TEST2_MODULUS_WORD_04 "0x4A7258FDU"
+#define TEST2_MODULUS_WORD_05 "0x6BC95A59U"
+#define TEST2_MODULUS_WORD_06 "0xBD62C246U"
+#define TEST2_MODULUS_WORD_07 "0xA0165CE4U"
+#define TEST2_MODULUS_WORD_08 "0x93AF4D38U"
+#define TEST2_MODULUS_WORD_09 "0x64B2B6C0U"
+#define TEST2_MODULUS_WORD_10 "0x662AE856U"
+#define TEST2_MODULUS_WORD_11 "0x8E4A169DU"
+#define TEST2_MODULUS_WORD_12 "0x9900ABA4U"
+#define TEST2_MODULUS_WORD_13 "0xFDBAD8A9U"
+#define TEST2_MODULUS_WORD_14 "0x9F98C215U"
+#define TEST2_MODULUS_WORD_15 "0xDEDA5C0BU"
+#define TEST2_MODULUS_WORD_16 "0x51B71CE0U"
+#define TEST2_MODULUS_WORD_17 "0xAFF25E06U"
+#define TEST2_MODULUS_WORD_18 "0x3AA949A5U"
+#define TEST2_MODULUS_WORD_19 "0x075D2634U"
+#define TEST2_MODULUS_WORD_20 "0x0154779FU"
+#define TEST2_MODULUS_WORD_21 "0x69616289U"
+#define TEST2_MODULUS_WORD_22 "0x5500377CU"
+#define TEST2_MODULUS_WORD_23 "0xB9ACA6EEU"
+#define TEST2_MODULUS_WORD_24 "0xBB01CB13U"
+#define TEST2_MODULUS_WORD_25 "0xF1ED2B18U"
+#define TEST2_MODULUS_WORD_26 "0x2CA6D7ACU"
+#define TEST2_MODULUS_WORD_27 "0x2D48967CU"
+#define TEST2_MODULUS_WORD_28 "0x9A2E5303U"
+#define TEST2_MODULUS_WORD_29 "0x0D1AF902U"
+#define TEST2_MODULUS_WORD_30 "0xA11B5E9DU"
+#define TEST2_MODULUS_WORD_31 "0xB2C0447EU"
+#define TEST2_MODULUS_WORD_32 "0x11D17EABU"
+#define TEST2_MODULUS_WORD_33 "0x4984E094U"
+#define TEST2_MODULUS_WORD_34 "0x9A29295EU"
+#define TEST2_MODULUS_WORD_35 "0x1AAFB348U"
+#define TEST2_MODULUS_WORD_36 "0x040F02A8U"
+#define TEST2_MODULUS_WORD_37 "0xA47EDD19U"
+#define TEST2_MODULUS_WORD_38 "0x991D31B8U"
+#define TEST2_MODULUS_WORD_39 "0x32C4DCA9U"
+#define TEST2_MODULUS_WORD_40 "0x71ECC8C1U"
+#define TEST2_MODULUS_WORD_41 "0x41EEE4F0U"
+#define TEST2_MODULUS_WORD_42 "0x0BC67343U"
+#define TEST2_MODULUS_WORD_43 "0x526370F0U"
+#define TEST2_MODULUS_WORD_44 "0x75887793U"
+#define TEST2_MODULUS_WORD_45 "0xF0170CB5U"
+#define TEST2_MODULUS_WORD_46 "0x604BC7F7U"
+#define TEST2_MODULUS_WORD_47 "0x62B730F4U"
+#define TEST2_MODULUS_WORD_48 "0x8182B681U"
+#define TEST2_MODULUS_WORD_49 "0xE64DB123U"
+#define TEST2_MODULUS_WORD_50 "0x6B458221U"
+#define TEST2_MODULUS_WORD_51 "0x253CBE37U"
+#define TEST2_MODULUS_WORD_52 "0x0FDE451BU"
+#define TEST2_MODULUS_WORD_53 "0xC02D4D41U"
+#define TEST2_MODULUS_WORD_54 "0x2ED88F92U"
+#define TEST2_MODULUS_WORD_55 "0x962EC4E9U"
+#define TEST2_MODULUS_WORD_56 "0x336FB076U"
+#define TEST2_MODULUS_WORD_57 "0xA2A08CBBU"
+#define TEST2_MODULUS_WORD_58 "0x72707932U"
+#define TEST2_MODULUS_WORD_59 "0xA16B9AABU"
+#define TEST2_MODULUS_WORD_60 "0x8817B003U"
+#define TEST2_MODULUS_WORD_61 "0xFDAC90E8U"
+#define TEST2_MODULUS_WORD_62 "0x3D33E955U"
+#define TEST2_MODULUS_WORD_63 "0xDECFB6FCU"
+
+// The low 32 bits of R - (modulus^-1) mod R.
+#define TEST2_MODULUS_INVERSE_LOW "0x85E8E66DU"
+
+// The 32-bit parts of MULTIPLIER_MONTGOMERY, least-significant first.
+#define TEST2_MULTIPLIER_WORD_00 "0xB5F30EF7U"
+#define TEST2_MULTIPLIER_WORD_01 "0x1020BA70U"
+#define TEST2_MULTIPLIER_WORD_02 "0xFA2C6D29U"
+#define TEST2_MULTIPLIER_WORD_03 "0x22B71AECU"
+#define TEST2_MULTIPLIER_WORD_04 "0xEFBED8EEU"
+#define TEST2_MULTIPLIER_WORD_05 "0x71E2EEC1U"
+#define TEST2_MULTIPLIER_WORD_06 "0x17296E7CU"
+#define TEST2_MULTIPLIER_WORD_07 "0x6824C5EAU"
+#define TEST2_MULTIPLIER_WORD_08 "0x468A8D87U"
+#define TEST2_MULTIPLIER_WORD_09 "0x29EBC942U"
+#define TEST2_MULTIPLIER_WORD_10 "0xB48A741EU"
+#define TEST2_MULTIPLIER_WORD_11 "0xC2E095FBU"
+#define TEST2_MULTIPLIER_WORD_12 "0xFB66B5CAU"
+#define TEST2_MULTIPLIER_WORD_13 "0xE9F4FFC9U"
+#define TEST2_MULTIPLIER_WORD_14 "0xF9A20DB7U"
+#define TEST2_MULTIPLIER_WORD_15 "0x995AB257U"
+#define TEST2_MULTIPLIER_WORD_16 "0x395BF3CCU"
+#define TEST2_MULTIPLIER_WORD_17 "0x385EBC48U"
+#define TEST2_MULTIPLIER_WORD_18 "0x2DB55CBFU"
+#define TEST2_MULTIPLIER_WORD_19 "0xD3B4BF5AU"
+#define TEST2_MULTIPLIER_WORD_20 "0xEC8F0FFBU"
+#define TEST2_MULTIPLIER_WORD_21 "0x268291ADU"
+#define TEST2_MULTIPLIER_WORD_22 "0xAFD05422U"
+#define TEST2_MULTIPLIER_WORD_23 "0xCFE89D5FU"
+#define TEST2_MULTIPLIER_WORD_24 "0xF5D73ABBU"
+#define TEST2_MULTIPLIER_WORD_25 "0xD3BDEF92U"
+#define TEST2_MULTIPLIER_WORD_26 "0x95A383E1U"
+#define TEST2_MULTIPLIER_WORD_27 "0x0C70076CU"
+#define TEST2_MULTIPLIER_WORD_28 "0x7EA0B490U"
+#define TEST2_MULTIPLIER_WORD_29 "0xBD967333U"
+#define TEST2_MULTIPLIER_WORD_30 "0x6B37B4DAU"
+#define TEST2_MULTIPLIER_WORD_31 "0x6A402853U"
+#define TEST2_MULTIPLIER_WORD_32 "0x7752F30DU"
+#define TEST2_MULTIPLIER_WORD_33 "0xBE8D824CU"
+#define TEST2_MULTIPLIER_WORD_34 "0x68EE4D1EU"
+#define TEST2_MULTIPLIER_WORD_35 "0x9A18D6F8U"
+#define TEST2_MULTIPLIER_WORD_36 "0x9583AA49U"
+#define TEST2_MULTIPLIER_WORD_37 "0xAB129DBFU"
+#define TEST2_MULTIPLIER_WORD_38 "0x2FD7E863U"
+#define TEST2_MULTIPLIER_WORD_39 "0x08D8B04FU"
+#define TEST2_MULTIPLIER_WORD_40 "0x474FE9E0U"
+#define TEST2_MULTIPLIER_WORD_41 "0xDEFB34FCU"
+#define TEST2_MULTIPLIER_WORD_42 "0xE87C6774U"
+#define TEST2_MULTIPLIER_WORD_43 "0x43C85CA9U"
+#define TEST2_MULTIPLIER_WORD_44 "0xC1D24733U"
+#define TEST2_MULTIPLIER_WORD_45 "0xF0298AB0U"
+#define TEST2_MULTIPLIER_WORD_46 "0x696B969AU"
+#define TEST2_MULTIPLIER_WORD_47 "0x2EDA7839U"
+#define TEST2_MULTIPLIER_WORD_48 "0x02ADD7F1U"
+#define TEST2_MULTIPLIER_WORD_49 "0xBAB19C9CU"
+#define TEST2_MULTIPLIER_WORD_50 "0xAC1B4D12U"
+#define TEST2_MULTIPLIER_WORD_51 "0x38DCAE67U"
+#define TEST2_MULTIPLIER_WORD_52 "0x5C6D352AU"
+#define TEST2_MULTIPLIER_WORD_53 "0x05B0ADB2U"
+#define TEST2_MULTIPLIER_WORD_54 "0x48E344A7U"
+#define TEST2_MULTIPLIER_WORD_55 "0xFC175DC2U"
+#define TEST2_MULTIPLIER_WORD_56 "0xAC1B1DD3U"
+#define TEST2_MULTIPLIER_WORD_57 "0x3486B994U"
+#define TEST2_MULTIPLIER_WORD_58 "0x86448BDBU"
+#define TEST2_MULTIPLIER_WORD_59 "0xCEB1823FU"
+#define TEST2_MULTIPLIER_WORD_60 "0x744D79A9U"
+#define TEST2_MULTIPLIER_WORD_61 "0xCEF43461U"
+#define TEST2_MULTIPLIER_WORD_62 "0x6FE966F3U"
+#define TEST2_MULTIPLIER_WORD_63 "0x43E70197U"
+
+
+bool IsSpace(char ch)
+{
+	return std::isspace(static_cast<unsigned char>(ch)) != 0;
+}
+
+
+void OpcodeSimulator(const char *instructions, Limb **registers, std::size_t numRegisters)
+{
+	Limb carryRegister = 0xCCCCCCCC;
+	Limb *operands[15];
+	Limb tempValues[countof(operands)];
+
+	if (numRegisters > countof(operands))
+	{
+		std::abort();
+	}
+
+	for (;;)
+	{
+		while (*instructions && IsSpace(*instructions))
+		{
+			++instructions;
+		}
+
+		if (!*instructions)
+		{
+			break;
+		}
+
+		const char *mnemonicBegin = instructions;
+		while (*instructions && !IsSpace(*instructions))
+		{
+			++instructions;
+		}
+
+		if (!*instructions)
+		{
+			std::abort();
+		}
+
+		std::string mnemonic{ mnemonicBegin, static_cast<std::size_t>(instructions - mnemonicBegin) };
+
+		int paramCount = 0;
+
+		const char *end = std::strchr(instructions, ';');
+		if (!end)
+		{
+			std::abort();
+		}
+
+		for (;;)
+		{
+			while ((instructions < end) && (IsSpace(*instructions)))
+			{
+				++instructions;
+			}
+			if (instructions >= end)
+			{
+				break;
+			}
+
+			if (paramCount == countof(operands))
+			{
+				std::abort();
+			}
+
+			const char *paramStart = instructions;
+			while ((instructions < end) && (*instructions != ',') && (!IsSpace(*instructions)))
+			{
+				++instructions;
+			}
+
+			std::string paramString{ paramStart, static_cast<std::size_t>(instructions - paramStart) };
+
+			int isRegister = 0;
+			if (paramString[0] == '%')
+			{
+				isRegister = 1;
+			}
+
+			unsigned long value = std::strtoul(paramString.c_str() + isRegister, nullptr, 0);
+
+			if (isRegister)
+			{
+				if (value >= numRegisters)
+				{
+					std::abort();
+				}
+				operands[paramCount] = registers[value];
+			}
+			else
+			{
+				tempValues[paramCount] = value;
+				operands[paramCount] = &tempValues[paramCount];
+			}
+
+			++paramCount;
+
+			if (*instructions == ',')
+			{
+				++instructions;
+			}
+		}
+
+		if (mnemonic == "add.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_add(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "addc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_addc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "add.cc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_add_cc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "addc.cc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_addc_cc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "sub.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_sub(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "subc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_subc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "sub.cc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_sub_cc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "subc.cc.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_subc_cc(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "mul.lo.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_mul_lo(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "mul.hi.u32")
+		{
+			if (paramCount != 3) std::abort();
+			ins_mul_hi(*operands[0], *operands[1], *operands[2]);
+		}
+		else if (mnemonic == "mad.lo.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_mad_lo(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "mad.lo.cc.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_mad_lo_cc(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "madc.lo.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_madc_lo(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "madc.lo.cc.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_madc_lo_cc(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "mad.hi.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_mad_hi(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "mad.hi.cc.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_mad_hi_cc(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "madc.hi.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_madc_hi(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else if (mnemonic == "madc.hi.cc.u32")
+		{
+			if (paramCount != 4) std::abort();
+			ins_madc_hi_cc(*operands[0], *operands[1], *operands[2], *operands[3]);
+		}
+		else
+		{
+			std::abort();
+		}
+
+		if (*instructions == ';')
+		{
+			++instructions;
+		}
+	}
+}
+
+void Simulate(const char *instructions, Limb &reg0)
+{
+	Limb *registers[] = { &reg0 };
+	OpcodeSimulator(instructions, registers, countof(registers));
+}
+
+void Simulate(const char *instructions, Limb &reg0, Limb &reg1)
+{
+	Limb *registers[] = { &reg0, &reg1 };
+	OpcodeSimulator(instructions, registers, countof(registers));
+}
+
+void Simulate(const char *instructions, Limb &reg0, Limb &reg1, Limb &reg2)
+{
+	Limb *registers[] = { &reg0, &reg1, &reg2 };
+	OpcodeSimulator(instructions, registers, countof(registers));
+}
+
+void Simulate(const char *instructions, Limb &reg0, Limb &reg1, Limb &reg2, Limb &reg3)
+{
+	Limb *registers[] = { &reg0, &reg1, &reg2, &reg3 };
+	OpcodeSimulator(instructions, registers, countof(registers));
+}
+
+void Simulate(const char *instructions, Limb &reg0, Limb &reg1, Limb &reg2, Limb &reg3, Limb &reg4, Limb &reg5, Limb &reg6, Limb &reg7, Limb &reg8, Limb &reg9, Limb &reg10)
+{
+	Limb *registers[] = { &reg0, &reg1, &reg2, &reg3, &reg4, &reg5, &reg6, &reg7, &reg8, &reg9, &reg10 };
+	OpcodeSimulator(instructions, registers, countof(registers));
+}
+
+
+void MultiplyStuffKernel2(Limb *dest, const Limb *src)
+{
+	// Start of code.
+	#define DECLARE_OUTPUT_ROUND(num) Limb var_t##num = 0
+
+	#define DECLARE_OUTPUT_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+		DECLARE_OUTPUT_ROUND(r1); DECLARE_OUTPUT_ROUND(r2); DECLARE_OUTPUT_ROUND(r3); \
+		DECLARE_OUTPUT_ROUND(r4); DECLARE_OUTPUT_ROUND(r5); DECLARE_OUTPUT_ROUND(r6); \
+		DECLARE_OUTPUT_ROUND(r7); DECLARE_OUTPUT_ROUND(r8); DECLARE_OUTPUT_ROUND(r9);
+
+	DECLARE_OUTPUT_ROUND(00);
+	DECLARE_OUTPUT_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+	DECLARE_OUTPUT_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+	DECLARE_OUTPUT_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+	DECLARE_OUTPUT_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+	DECLARE_OUTPUT_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+	DECLARE_OUTPUT_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+	DECLARE_OUTPUT_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+	DECLARE_OUTPUT_ROUND(64);
+	DECLARE_OUTPUT_ROUND(65);
+
+	const struct { int x; } threadIdx = { 0 };
+
+	Limb var_multiplicand = 0;
+	Limb var_m = 0;
+	Limb var_carry = 0;
+	Limb var_temp = 0;
+
+	// Reduce subroutine.  Multiplies by R^-1 mod n.
+	auto reduce = [&]()
+	{
+		// Reduce rounds.
+		Simulate(
+			// Get multiplicand used for reduction.
+			"mul.lo.u32 %0, %1, " TEST2_MODULUS_INVERSE_LOW ";\n\t"
+			// The first round of reduction discards the result.
+			"mad.lo.cc.u32 %2, %0, " TEST2_MODULUS_WORD_00 ", %1;\n\t"
+			"madc.hi.u32 %2, %0, " TEST2_MODULUS_WORD_00 ", 0;\n\t" // note no % on 0
+			,	(var_m), (var_t00), (var_carry));
+
+		#define REDUCE_ROUND(prev, curr) \
+			Simulate( \
+				"mad.lo.cc.u32 %0, %2, " TEST2_MODULUS_WORD_##curr ", %3;\n\t" \
+				"madc.hi.u32 %3, %2, " TEST2_MODULUS_WORD_##curr ", 0;\n\t" /* note no % on 0 */ \
+				"add.cc.u32 %0, %0, %1;\n\t" \
+				"addc.u32 %3, %3, 0;\n\t" /* note no % on 0*/ \
+				,	(var_t##prev), (var_t##curr), (var_m), (var_carry))
+
+		#define REDUCE_ROUND_9(r0, r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			REDUCE_ROUND(r0, r1); REDUCE_ROUND(r1, r2); REDUCE_ROUND(r2, r3); \
+			REDUCE_ROUND(r3, r4); REDUCE_ROUND(r4, r5); REDUCE_ROUND(r5, r6); \
+			REDUCE_ROUND(r6, r7); REDUCE_ROUND(r7, r8); REDUCE_ROUND(r8, r9)
+
+		REDUCE_ROUND_9(00, 01, 02, 03, 04, 05, 06, 07, 08, 09);
+		REDUCE_ROUND_9(09, 10, 11, 12, 13, 14, 15, 16, 17, 18);
+		REDUCE_ROUND_9(18, 19, 20, 21, 22, 23, 24, 25, 26, 27);
+		REDUCE_ROUND_9(27, 28, 29, 30, 31, 32, 33, 34, 35, 36);
+		REDUCE_ROUND_9(36, 37, 38, 39, 40, 41, 42, 43, 44, 45);
+		REDUCE_ROUND_9(45, 46, 47, 48, 49, 50, 51, 52, 53, 54);
+		REDUCE_ROUND_9(54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
+
+		Simulate(
+			"add.cc.u32 %0, %1, %3;\n\t"
+			"addc.u32 %1, %2, 0;\n\t" // note no % on 0
+			,	(var_t63), (var_t64), (var_t65), (var_carry));
+	};
+
+	// Subroutine to write results.
+	auto writeResults = [&](unsigned offset)
+	{
+		#define STORE_ROUND(num) dest[offset + ((1##num - 100) * NUM_THREADS)] = var_t##num;
+
+		#define STORE_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			STORE_ROUND(r1); STORE_ROUND(r2); STORE_ROUND(r3); \
+			STORE_ROUND(r4); STORE_ROUND(r5); STORE_ROUND(r6); \
+			STORE_ROUND(r7); STORE_ROUND(r8); STORE_ROUND(r9);
+
+		STORE_ROUND(00);
+		STORE_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+		STORE_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+		STORE_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+		STORE_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+		STORE_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+		STORE_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+		STORE_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+	};
+
+	// Main multiplication-reduction loop.
+	for (unsigned i = 0; i < LIMB_COUNT; ++i)
+	{
+		// Multiplier for this round.
+		var_multiplicand = src[(i * NUM_THREADS) + threadIdx.x];
+
+		// First round is special, because registers not set yet.
+		if (i == 0)
+		{
+			Simulate(
+				"mul.lo.u32 %0, %1, " TEST2_MULTIPLIER_WORD_00 ";\n\t"
+				"mul.hi.u32 %2, %1, " TEST2_MULTIPLIER_WORD_00 ";\n\t"
+				,	(var_t00), (var_multiplicand), (var_carry));
+
+			#define MULTIPLY_FIRST_ROUND(num) \
+				Simulate( \
+					"mad.lo.cc.u32 %0, %1, " TEST2_MULTIPLIER_WORD_##num ", %2;\n\t" \
+					"madc.hi.u32 %2, %1, " TEST2_MULTIPLIER_WORD_##num ", 0;\n\t" \
+					,	(var_t##num), (var_multiplicand), (var_carry))
+
+			#define MULTIPLY_FIRST_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+				MULTIPLY_FIRST_ROUND(r1); MULTIPLY_FIRST_ROUND(r2); MULTIPLY_FIRST_ROUND(r3); \
+				MULTIPLY_FIRST_ROUND(r4); MULTIPLY_FIRST_ROUND(r5); MULTIPLY_FIRST_ROUND(r6); \
+				MULTIPLY_FIRST_ROUND(r7); MULTIPLY_FIRST_ROUND(r8); MULTIPLY_FIRST_ROUND(r9);
+
+			MULTIPLY_FIRST_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+			MULTIPLY_FIRST_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+			MULTIPLY_FIRST_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+			MULTIPLY_FIRST_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+			MULTIPLY_FIRST_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+			MULTIPLY_FIRST_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+			MULTIPLY_FIRST_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+
+			var_t64 = var_carry;
+			var_t65 = 0;
+		}
+		else
+		{
+			Simulate(
+				"mad.lo.cc.u32 %0, %1, " TEST2_MULTIPLIER_WORD_00 ", %0;\n\t"
+				"madc.hi.u32 %2, %1, " TEST2_MULTIPLIER_WORD_00 ", 0;\n\t"  // note no % on this 0
+				,	(var_t00), (var_multiplicand), (var_carry));
+
+			#define MULTIPLY_ROUND(num) \
+				Simulate( \
+					"mad.lo.cc.u32 %0, %1, " TEST2_MULTIPLIER_WORD_##num ", %0;\n\t" \
+					"madc.hi.u32 %2, %1, " TEST2_MULTIPLIER_WORD_##num ", 0;\n\t" /* note no % on 0 */ \
+					"add.cc.u32 %0, %0, %3;\n\t" \
+					"addc.u32 %3, %2, 0;\n\t" /* note no % on 0 */ \
+					,	(var_t##num), (var_multiplicand), (var_temp), (var_carry))
+
+			#define MULTIPLY_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+				MULTIPLY_ROUND(r1); MULTIPLY_ROUND(r2); MULTIPLY_ROUND(r3); \
+				MULTIPLY_ROUND(r4); MULTIPLY_ROUND(r5); MULTIPLY_ROUND(r6); \
+				MULTIPLY_ROUND(r7); MULTIPLY_ROUND(r8); MULTIPLY_ROUND(r9)
+
+			MULTIPLY_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+			MULTIPLY_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+			MULTIPLY_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+			MULTIPLY_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+			MULTIPLY_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+			MULTIPLY_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+			MULTIPLY_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+
+			Simulate(
+				"add.cc.u32 %0, %0, %1;\n\t"
+				"addc.u32 %2, %2, 0;\n\t" // note no % on 0
+				,	(var_t64), (var_carry), (var_t65));
+		}
+
+		// Reduce - multiply by R^-1 mod n.
+		reduce();
+	}
+
+	// Function to subtract the modulus if the result is greater than or equal
+	// to the modulus.
+	auto compareReduce1 = [&]()
+	{
+		// Compare against the modulus.
+		Simulate(
+			"sub.cc.u32 %0, %1, " TEST2_MODULUS_WORD_00 ";\n\t"
+			"addc.u32 %2, 0, 0;\n\t"  // extract carry flag to carry variable
+			,	(var_temp), (var_t00), (var_carry));
+
+		#define COMPARE_ROUND(regnum, wordnum) \
+			"subc.cc.u32 %0, %" #regnum ", " TEST2_MODULUS_WORD_##wordnum ";\n\t"
+
+		#define COMPARE_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			Simulate( \
+				"add.cc.u32 %0, %10, 0xFFFFFFFFU;\n\t" /* put carry variable into carry flag */ \
+				COMPARE_ROUND(1, r1) COMPARE_ROUND(2, r2) COMPARE_ROUND(3, r3) \
+				COMPARE_ROUND(4, r4) COMPARE_ROUND(5, r5) COMPARE_ROUND(6, r6) \
+				COMPARE_ROUND(7, r7) COMPARE_ROUND(8, r8) COMPARE_ROUND(9, r9) \
+				"addc.u32 %10, 0, 0;\n\t"  /* extract carry flag to carry variable */ \
+				,	(var_temp), \
+					(var_t##r1), (var_t##r2), (var_t##r3), \
+					(var_t##r4), (var_t##r5), (var_t##r6), \
+					(var_t##r7), (var_t##r8), (var_t##r9), \
+					(var_carry))
+
+		COMPARE_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+		COMPARE_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+		COMPARE_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+		COMPARE_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+		COMPARE_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+		COMPARE_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+		COMPARE_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+
+		// If necessary, subtract.
+		// carry is 1 if above or equal, 0 if not (6502 semantics, not x86).
+		if ((var_carry != 0) || (var_t64 != 0))
+		{
+			Simulate(
+				"sub.cc.u32 %1, %1, " TEST2_MODULUS_WORD_00 ";\n\t"
+				"addc.u32 %2, 0, 0;\n\t"  // extract carry flag to carry variable
+				,	(var_temp), (var_t00), (var_carry));
+
+			#define SUBTRACT_ROUND(regnum, wordnum) \
+				"subc.cc.u32 %" #regnum ", %" #regnum ", " TEST2_MODULUS_WORD_##wordnum ";\n\t"
+
+			#define SUBTRACT_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+				Simulate( \
+					"add.cc.u32 %0, %10, 0xFFFFFFFFU;\n\t" /* put carry variable into carry flag */ \
+					SUBTRACT_ROUND(1, r1) SUBTRACT_ROUND(2, r2) SUBTRACT_ROUND(3, r3) \
+					SUBTRACT_ROUND(4, r4) SUBTRACT_ROUND(5, r5) SUBTRACT_ROUND(6, r6) \
+					SUBTRACT_ROUND(7, r7) SUBTRACT_ROUND(8, r8) SUBTRACT_ROUND(9, r9) \
+					"addc.u32 %10, 0, 0;\n\t"  /* extract carry flag to carry variable */ \
+					,	(var_temp), \
+						(var_t##r1), (var_t##r2), (var_t##r3), \
+						(var_t##r4), (var_t##r5), (var_t##r6), \
+						(var_t##r7), (var_t##r8), (var_t##r9), \
+						(var_carry))
+
+			SUBTRACT_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+			SUBTRACT_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+			SUBTRACT_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+			SUBTRACT_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+			SUBTRACT_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+			SUBTRACT_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+			SUBTRACT_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+		}
+	};
+
+
+	// Do one iteration of the subtraction.
+	compareReduce1();
+
+	// Write results, which is a*b*R mod n.
+	writeResults((0 * LIMB_COUNT * NUM_THREADS) + threadIdx.x);
+
+	// Multiply by R^-1 again so that the actual answer is visible.
+	reduce();
+	compareReduce1();
+
+	// Write the non-Montgomery results.
+	writeResults((1 * LIMB_COUNT * NUM_THREADS) + threadIdx.x);
+
+#undef DECLARE_OUTPUT_ROUND
+#undef DECLARE_OUTPUT_ROUND_9
+#undef MULTIPLY_FIRST_ROUND
+#undef MULTIPLY_FIRST_ROUND_9
+#undef MULTIPLY_ROUND
+#undef MULTIPLY_ROUND_9
+#undef REDUCE_ROUND
+#undef REDUCE_ROUND_9
+#undef COMPARE_ROUND
+#undef COMPARE_ROUND_9
+#undef SUBTRACT_ROUND
+#undef SUBTRACT_ROUND_9
+#undef STORE_ROUND
+#undef STORE_ROUND_9
+}
 
 // Exports an mpz_t as an array of mp_limb_t for mpn_* use.
 template <size_t S>
@@ -788,6 +1442,10 @@ int main()
 	MPZNumber gmpMultiplier;
 	mpz_set_str(gmpMultiplier, s_multiplier, 16);
 
+	MPZNumber gmpMultiplerTimesR;
+	mpz_mul(gmpMultiplerTimesR, gmpMultiplier, gmpRModModulus);
+	mpz_mod(gmpMultiplerTimesR, gmpMultiplerTimesR, gmpModulus);
+
 	Number<LIMB_COUNT> modulus;
 	ToLimbArray(modulus.m_gmp, gmpModulus);
 
@@ -796,7 +1454,21 @@ int main()
 
 	Limb modulusInverseR0 = inverse.m_limbs[0];
 
-	for (unsigned x = 0; x < 100000; ++x)
+	Number<LIMB_COUNT> multiplierTimesR;
+	ToLimbArray(multiplierTimesR.m_gmp, gmpMultiplerTimesR);
+
+	Limb output1[LIMB_COUNT];
+	MultiplyStuffKernel(output1, multiplierTimesR.m_limbs, modulus.m_limbs, modulusInverseR0);
+
+	Limb output2[LIMB_COUNT * 2];
+	MultiplyStuffKernel2(output2, multiplierTimesR.m_limbs);
+
+	if (std::memcmp(output1, output2, sizeof(output1)) != 0)
+	{
+		__debugbreak();
+	}
+
+/*	for (unsigned x = 0; x < 100000; ++x)
 	{
 		// Generate random numbers a and b.
 		MPZNumber gmpA;
@@ -845,13 +1517,16 @@ int main()
 			__debugbreak();
 		}
 
-		Limb output2[LIMB_COUNT + 2];
+		Limb output2[LIMB_COUNT];
 		MultiplyStuffKernel(output2, aMontgomery.m_limbs, modulus.m_limbs, modulusInverseR0);
 
 		if (std::memcmp(output2, check.m_limbs, sizeof(check.m_limbs)) != 0)
 		{
 			__debugbreak();
 		}
+
+		Limb output3[LIMB_COUNT];
+		MultiplyStuffKernel2(output3, aMontgomery.m_limbs);
 
 		MPZNumber gmpReduced;
 		Number<LIMB_COUNT> reduced;
@@ -870,19 +1545,8 @@ int main()
 			__debugbreak();
 		}
 
-		Limb reduced3[LIMB_COUNT + 2];
-		std::memcpy(reduced3, output, sizeof(reduced3));
-		reduced3[LIMB_COUNT] = 0;
-		reduced3[LIMB_COUNT + 1] = 0;
-		MontgomeryReduce<LIMB_COUNT>(reduced3, modulus.m_limbs, modulusInverseR0);
-
-		if (std::memcmp(reduced.m_limbs, reduced3, sizeof(reduced.m_limbs)) != 0)
-		{
-			__debugbreak();
-		}
-
 		__nop();
-	}
+	}*/
 
 	return 0;
 }

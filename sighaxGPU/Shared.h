@@ -28,7 +28,16 @@ constexpr size_t countof(const T(&)[S])
 }
 
 
-enum { NUM_THREADS = 256 };
+enum
+{
+	NUM_THREADS = 512,
+	NUM_BLOCKS = 1024,
+
+	BLOCK_LIMB_COUNT = NUM_THREADS * LIMB_COUNT,
+	TOTAL_LIMB_COUNT = NUM_BLOCKS * BLOCK_LIMB_COUNT,
+};
 
 
-cudaError_t GPUExecuteOperation(Limb (&dest)[NUM_THREADS * LIMB_COUNT * 2], const Limb (&src)[NUM_THREADS * LIMB_COUNT]);
+cudaError_t GPUExecuteOperation(
+	Limb dest[TOTAL_LIMB_COUNT * 2],
+	const Limb src[TOTAL_LIMB_COUNT]);
