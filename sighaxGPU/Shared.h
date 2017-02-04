@@ -1,11 +1,14 @@
 #pragma once
 
+#include <cinttypes>
 #include <cstdint>
 #include <climits>
 #include <limits>
 
 typedef std::uint32_t Limb;
 typedef std::uint64_t DoubleLimb;
+
+#define LIMB_PRINTF_FORMAT "%08" PRIX32
 
 enum { MODULUS_BITS = 2048 };
 enum { KEY_SIZE = MODULUS_BITS / CHAR_BIT };
@@ -32,13 +35,8 @@ constexpr size_t countof(const T(&)[S])
 
 enum
 {
-#ifndef _DEBUG
 	NUM_THREADS = 512,
 	NUM_BLOCKS = 1024,
-#else
-	NUM_THREADS = 16,
-	NUM_BLOCKS = 16,
-#endif
 
 	BLOCK_LIMB_COUNT = NUM_THREADS * LIMB_COUNT,
 	TOTAL_LIMB_COUNT = NUM_BLOCKS * BLOCK_LIMB_COUNT,

@@ -507,5 +507,5 @@ cudaError_t GPUExecuteOperation(
 	cudaFree(d_src);
 	cudaFree(d_dest);
 
-	return cudaSuccess;
+	return cudaStatus;
 }

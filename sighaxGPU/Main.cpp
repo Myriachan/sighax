@@ -10,6 +10,7 @@
 #ifdef _DEBUG
 	#define ENABLE_VERIFY_MODE
 #endif
+#define PROFILE_MODE
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
@@ -148,6 +149,14 @@ union Number
 	{
 		static_assert(sizeof(m_limbs) == sizeof(m_gmp), "Unsupported limb size");
 	}
+
+	void Print(std::FILE *output = stdout)
+	{
+		for (unsigned x = 0; x < countof(m_limbs); ++x)
+		{
+			std::fprintf(output, LIMB_PRINTF_FORMAT, m_limbs[countof(m_limbs) - 1 - x]);
+		}
+	}
 };
 
 
@@ -253,6 +262,9 @@ void DeinterleaveNumber(Limb *dest, const Limb *src, unsigned block, unsigned th
 }
 
 
+volatile bool g_meow = false;
+
+
 // Determine whether the given buffer is what we want.
 bool IsWhatWeWant(const mp_limb_t *limbs)
 {
@@ -276,7 +288,7 @@ bool IsWhatWeWant(const mp_limb_t *limbs)
 		return false;
 	}
 
-	// Count how many nonzero bytes are after the 0x02.
+/*	// Count how many nonzero bytes are after the 0x02.
 	unsigned zeroIndex;
 	for (zeroIndex = 0x02; zeroIndex < KEY_SIZE; ++zeroIndex)
 	{
@@ -291,7 +303,7 @@ bool IsWhatWeWant(const mp_limb_t *limbs)
 		return false;
 	}
 
-	// TODO: Rest of implementation.
+	// TODO: Rest of implementation.*/
 
 	return true;
 }
@@ -329,6 +341,8 @@ bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &mat
 	static const Limb check1 = 0x00020000;
 	Limb check2 = modulus.m_limbs[LIMB_COUNT - 1] - check1;
 	Limb check3 = check2 - 0x10000;
+	check2 &= 0xFFFF0000;
+	check3 &= 0xFFFF0000;
 
 	// Pointer to plaintext half.
 	const Limb *plaintext = nextBuffer + TOTAL_LIMB_COUNT;
@@ -382,7 +396,43 @@ bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_
 	mpz_mul(gmpSignature, gmpBase, gmpPower);
 	mpz_mod(gmpSignature, gmpSignature, gmpModulus);
 
-	return false;
+	// Negate if the negative is what we found.
+	if (negative)
+	{
+		mpz_sub(gmpSignature, gmpModulus, gmpSignature);
+	}
+
+	// Take it to the 65537th power to simulate a signature check.
+	MPZNumber gmpResult;
+	mpz_powm_ui(gmpResult, gmpSignature, s_publicExponent, gmpModulus);
+
+	// Convert the result and signature to arrays.
+	Number<LIMB_COUNT> signature;
+	ToLimbArray(signature.m_gmp, gmpSignature);
+	Number<LIMB_COUNT> result;
+	ToLimbArray(result.m_gmp, gmpResult);
+
+	if (!IsWhatWeWant(result.m_gmp))
+	{
+		std::printf("Reconstruction error on round %llu\n", round);
+		std::fflush(stdout);
+		return false;
+	}
+	else
+	{
+		std::printf("Match found!\n");
+
+		std::printf("Signature: ");
+		signature.Print();
+		std::puts("");
+
+		std::printf("Signature: ");
+		result.Print();
+		std::puts("");
+
+		std::fflush(stdout);
+		return true;
+	}
 }
 
 
@@ -483,7 +533,12 @@ int main()
 			unsigned currentBuffer = round & 1;
 			unsigned nextBuffer = currentBuffer ^ 1;
 
-			GPUExecuteOperation(buffer[nextBuffer], buffer[currentBuffer]);
+			cudaError_t status = GPUExecuteOperation(buffer[nextBuffer], buffer[currentBuffer]);
+			if (status != cudaSuccess)
+			{
+				std::printf("GPUExecuteOperation failed: %d\n", static_cast<int>(status));
+				goto done;
+			}
 
 		#ifdef ENABLE_VERIFY_MODE
 			MPZNumber gmpCorrect;
@@ -507,6 +562,8 @@ int main()
 
 					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
 					{
+						std::printf("failed(1) at %u:%u:%u\n", round, i, j);
+						std::fflush(stdout);
 						__debugbreak();
 					}
 
@@ -518,11 +575,32 @@ int main()
 
 					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
 					{
+						std::printf("failed(2) at %u:%u:%u\n", round, i, j);
+						std::fflush(stdout);
 						__debugbreak();
 					}
 				}
 			}
 		#endif
+
+			// Check for matches.
+			{
+				unsigned block;
+				unsigned thread;
+				bool negative;
+				if (SearchForMatches(block, thread, negative, buffer[nextBuffer], modulus))
+				{
+					if (VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
+							gmpMultiplierRoot, round, negative))
+					{
+						goto done;
+					}
+					else
+					{
+						std::abort();
+					}
+				}
+			}
 
 			total += NUM_BLOCKS * NUM_THREADS;
 			check += buffer[currentBuffer][12345];
@@ -539,6 +617,7 @@ int main()
 		break;
 	}
 
+done:
 	// cudaDeviceReset must be called before exiting in order for profiling and
 	// tracing tools such as Nsight and Visual Profiler to show complete traces.
 	cudaStatus = cudaDeviceReset();
