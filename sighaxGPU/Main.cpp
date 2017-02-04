@@ -7,6 +7,10 @@
 #include <type_traits>
 #include "Shared.h"
 
+#ifdef _DEBUG
+	#define ENABLE_VERIFY_MODE
+#endif
+
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
 	#define NOGDI
@@ -69,142 +73,6 @@ const char s_multiplierMontgomery[] =
 	"CFE89D5FAFD05422268291ADEC8F0FFBD3B4BF5A2DB55CBF385EBC48395BF3CC"
 	"995AB257F9A20DB7E9F4FFC9FB66B5CAC2E095FBB48A741E29EBC942468A8D87"
 	"6824C5EA17296E7C71E2EEC1EFBED8EE22B71AECFA2C6D291020BA70B5F30EF7";
-
-
-// The 32-bit parts of s_modulus, least-significant first.
-#define MODULUS_WORD_00 "0x9BD0EC9BU"
-#define MODULUS_WORD_01 "0x045BE017U"
-#define MODULUS_WORD_02 "0x3085E8A1U"
-#define MODULUS_WORD_03 "0xB2CC3687U"
-#define MODULUS_WORD_04 "0x4A7258FDU"
-#define MODULUS_WORD_05 "0x6BC95A59U"
-#define MODULUS_WORD_06 "0xBD62C246U"
-#define MODULUS_WORD_07 "0xA0165CE4U"
-#define MODULUS_WORD_08 "0x93AF4D38U"
-#define MODULUS_WORD_09 "0x64B2B6C0U"
-#define MODULUS_WORD_10 "0x662AE856U"
-#define MODULUS_WORD_11 "0x8E4A169DU"
-#define MODULUS_WORD_12 "0x9900ABA4U"
-#define MODULUS_WORD_13 "0xFDBAD8A9U"
-#define MODULUS_WORD_14 "0x9F98C215U"
-#define MODULUS_WORD_15 "0xDEDA5C0BU"
-#define MODULUS_WORD_16 "0x51B71CE0U"
-#define MODULUS_WORD_17 "0xAFF25E06U"
-#define MODULUS_WORD_18 "0x3AA949A5U"
-#define MODULUS_WORD_19 "0x075D2634U"
-#define MODULUS_WORD_20 "0x0154779FU"
-#define MODULUS_WORD_21 "0x69616289U"
-#define MODULUS_WORD_22 "0x5500377CU"
-#define MODULUS_WORD_23 "0xB9ACA6EEU"
-#define MODULUS_WORD_24 "0xBB01CB13U"
-#define MODULUS_WORD_25 "0xF1ED2B18U"
-#define MODULUS_WORD_26 "0x2CA6D7ACU"
-#define MODULUS_WORD_27 "0x2D48967CU"
-#define MODULUS_WORD_28 "0x9A2E5303U"
-#define MODULUS_WORD_29 "0x0D1AF902U"
-#define MODULUS_WORD_30 "0xA11B5E9DU"
-#define MODULUS_WORD_31 "0xB2C0447EU"
-#define MODULUS_WORD_32 "0x11D17EABU"
-#define MODULUS_WORD_33 "0x4984E094U"
-#define MODULUS_WORD_34 "0x9A29295EU"
-#define MODULUS_WORD_35 "0x1AAFB348U"
-#define MODULUS_WORD_36 "0x040F02A8U"
-#define MODULUS_WORD_37 "0xA47EDD19U"
-#define MODULUS_WORD_38 "0x991D31B8U"
-#define MODULUS_WORD_39 "0x32C4DCA9U"
-#define MODULUS_WORD_40 "0x71ECC8C1U"
-#define MODULUS_WORD_41 "0x41EEE4F0U"
-#define MODULUS_WORD_42 "0x0BC67343U"
-#define MODULUS_WORD_43 "0x526370F0U"
-#define MODULUS_WORD_44 "0x75887793U"
-#define MODULUS_WORD_45 "0xF0170CB5U"
-#define MODULUS_WORD_46 "0x604BC7F7U"
-#define MODULUS_WORD_47 "0x62B730F4U"
-#define MODULUS_WORD_48 "0x8182B681U"
-#define MODULUS_WORD_49 "0xE64DB123U"
-#define MODULUS_WORD_50 "0x6B458221U"
-#define MODULUS_WORD_51 "0x253CBE37U"
-#define MODULUS_WORD_52 "0x0FDE451BU"
-#define MODULUS_WORD_53 "0xC02D4D41U"
-#define MODULUS_WORD_54 "0x2ED88F92U"
-#define MODULUS_WORD_55 "0x962EC4E9U"
-#define MODULUS_WORD_56 "0x336FB076U"
-#define MODULUS_WORD_57 "0xA2A08CBBU"
-#define MODULUS_WORD_58 "0x72707932U"
-#define MODULUS_WORD_59 "0xA16B9AABU"
-#define MODULUS_WORD_60 "0x8817B003U"
-#define MODULUS_WORD_61 "0xFDAC90E8U"
-#define MODULUS_WORD_62 "0x3D33E955U"
-#define MODULUS_WORD_63 "0xDECFB6FCU"
-
-// The low 32 bits of R - (modulus^-1) mod R.
-#define MODULUS_INVERSE_LOW "0x85E8E66DU"
-
-// The 32-bit parts of MULTIPLIER_MONTGOMERY, least-significant first.
-#define MULTIPLIER_WORD_00 "0xB5F30EF7U"
-#define MULTIPLIER_WORD_01 "0x1020BA70U"
-#define MULTIPLIER_WORD_02 "0xFA2C6D29U"
-#define MULTIPLIER_WORD_03 "0x22B71AECU"
-#define MULTIPLIER_WORD_04 "0xEFBED8EEU"
-#define MULTIPLIER_WORD_05 "0x71E2EEC1U"
-#define MULTIPLIER_WORD_06 "0x17296E7CU"
-#define MULTIPLIER_WORD_07 "0x6824C5EAU"
-#define MULTIPLIER_WORD_08 "0x468A8D87U"
-#define MULTIPLIER_WORD_09 "0x29EBC942U"
-#define MULTIPLIER_WORD_10 "0xB48A741EU"
-#define MULTIPLIER_WORD_11 "0xC2E095FBU"
-#define MULTIPLIER_WORD_12 "0xFB66B5CAU"
-#define MULTIPLIER_WORD_13 "0xE9F4FFC9U"
-#define MULTIPLIER_WORD_14 "0xF9A20DB7U"
-#define MULTIPLIER_WORD_15 "0x995AB257U"
-#define MULTIPLIER_WORD_16 "0x395BF3CCU"
-#define MULTIPLIER_WORD_17 "0x385EBC48U"
-#define MULTIPLIER_WORD_18 "0x2DB55CBFU"
-#define MULTIPLIER_WORD_19 "0xD3B4BF5AU"
-#define MULTIPLIER_WORD_20 "0xEC8F0FFBU"
-#define MULTIPLIER_WORD_21 "0x268291ADU"
-#define MULTIPLIER_WORD_22 "0xAFD05422U"
-#define MULTIPLIER_WORD_23 "0xCFE89D5FU"
-#define MULTIPLIER_WORD_24 "0xF5D73ABBU"
-#define MULTIPLIER_WORD_25 "0xD3BDEF92U"
-#define MULTIPLIER_WORD_26 "0x95A383E1U"
-#define MULTIPLIER_WORD_27 "0x0C70076CU"
-#define MULTIPLIER_WORD_28 "0x7EA0B490U"
-#define MULTIPLIER_WORD_29 "0xBD967333U"
-#define MULTIPLIER_WORD_30 "0x6B37B4DAU"
-#define MULTIPLIER_WORD_31 "0x6A402853U"
-#define MULTIPLIER_WORD_32 "0x7752F30DU"
-#define MULTIPLIER_WORD_33 "0xBE8D824CU"
-#define MULTIPLIER_WORD_34 "0x68EE4D1EU"
-#define MULTIPLIER_WORD_35 "0x9A18D6F8U"
-#define MULTIPLIER_WORD_36 "0x9583AA49U"
-#define MULTIPLIER_WORD_37 "0xAB129DBFU"
-#define MULTIPLIER_WORD_38 "0x2FD7E863U"
-#define MULTIPLIER_WORD_39 "0x08D8B04FU"
-#define MULTIPLIER_WORD_40 "0x474FE9E0U"
-#define MULTIPLIER_WORD_41 "0xDEFB34FCU"
-#define MULTIPLIER_WORD_42 "0xE87C6774U"
-#define MULTIPLIER_WORD_43 "0x43C85CA9U"
-#define MULTIPLIER_WORD_44 "0xC1D24733U"
-#define MULTIPLIER_WORD_45 "0xF0298AB0U"
-#define MULTIPLIER_WORD_46 "0x696B969AU"
-#define MULTIPLIER_WORD_47 "0x2EDA7839U"
-#define MULTIPLIER_WORD_48 "0x02ADD7F1U"
-#define MULTIPLIER_WORD_49 "0xBAB19C9CU"
-#define MULTIPLIER_WORD_50 "0xAC1B4D12U"
-#define MULTIPLIER_WORD_51 "0x38DCAE67U"
-#define MULTIPLIER_WORD_52 "0x5C6D352AU"
-#define MULTIPLIER_WORD_53 "0x05B0ADB2U"
-#define MULTIPLIER_WORD_54 "0x48E344A7U"
-#define MULTIPLIER_WORD_55 "0xFC175DC2U"
-#define MULTIPLIER_WORD_56 "0xAC1B1DD3U"
-#define MULTIPLIER_WORD_57 "0x3486B994U"
-#define MULTIPLIER_WORD_58 "0x86448BDBU"
-#define MULTIPLIER_WORD_59 "0xCEB1823FU"
-#define MULTIPLIER_WORD_60 "0x744D79A9U"
-#define MULTIPLIER_WORD_61 "0xCEF43461U"
-#define MULTIPLIER_WORD_62 "0x6FE966F3U"
-#define MULTIPLIER_WORD_63 "0x43E70197U"
 
 
 #ifdef _WIN32
@@ -274,6 +142,7 @@ union Number
 {
 	LimbArray<S> m_limbs;
 	mp_limb_t m_gmp[(S + (GMP_LIMB_BITS / LIMB_BITS) - 1) / (GMP_LIMB_BITS / LIMB_BITS)];
+	unsigned char m_bytes[LIMB_COUNT * sizeof(Limb)];
 
 	static void Dummy()
 	{
@@ -300,6 +169,23 @@ public:
 private:
 	mpz_t m_gmp;
 };
+
+
+// Byte swap helper.
+Limb ByteSwapLimb(Limb limb)
+{
+#ifdef _MSC_VER
+	static_assert((std::numeric_limits<Limb>::max)() == (std::numeric_limits<unsigned long>::max)(),
+		"Unexpected limb size");
+	return static_cast<Limb>(_byteswap_ulong(static_cast<unsigned long>(limb)));
+#elif defined(__clang__) || defined(__GNUC__)
+	static_assert((std::numeric_limits<Limb>::max)() == (std::numeric_limits<std::uint32_t>::max)(),
+		"Unexpected limb size");
+	return static_cast<Limb>(__builtin_bswap32(static_cast<std::uint32_t>(limb)));
+#else
+	#error Need implementation
+#endif
+}
 
 
 // Quick and dirty random number generator from Wikipedia.
@@ -352,7 +238,160 @@ void MakeRandomRequest(Number<LIMB_COUNT> &base, Number<LIMB_COUNT> &initialValu
 }
 
 
-int wmain()
+// Takes an interleaved number and reverts it to interleaved format.
+void DeinterleaveNumber(Limb *dest, const Limb *src, unsigned block, unsigned thread)
+{
+	// The interleaved format has each block in order, then within a block,
+	// the first limbs for each thread, then the second limbs for each thread...
+	// This is the interleaved form.
+	unsigned base = (block * BLOCK_LIMB_COUNT) + thread;
+
+	for (unsigned i = 0; i < LIMB_COUNT; ++i)
+	{
+		dest[i] = src[base + (i * NUM_THREADS)];
+	}
+}
+
+
+// Determine whether the given buffer is what we want.
+bool IsWhatWeWant(const mp_limb_t *limbs)
+{
+	// Test code - used when profiling so that we never find anything.
+#ifdef PROFILE_MODE
+	if (!g_meow) return false;
+#endif
+
+	// For our own sanity, we use big-endian indexing here.
+	// It's much easier to conceptualize that way.
+	auto getByte = [&limbs](std::size_t index) -> const unsigned char &
+	{
+		// unsigned char is allowed to alias in C/C++ rules.
+		static_assert((KEY_SIZE & (KEY_SIZE - 1)) == 0, "KEY_SIZE must be a power of 2");
+		return (reinterpret_cast<const unsigned char *>(limbs))[index ^ (KEY_SIZE - 1)];
+	};
+
+	// A match must begin with 00 02.
+	if ((getByte(0x00) != 0x00) || (getByte(0x01) != 0x02))
+	{
+		return false;
+	}
+
+	// Count how many nonzero bytes are after the 0x02.
+	unsigned zeroIndex;
+	for (zeroIndex = 0x02; zeroIndex < KEY_SIZE; ++zeroIndex)
+	{
+		if (getByte(zeroIndex) == 0x00)
+		{
+			break;
+		}
+	}
+
+	if (zeroIndex >= KEY_SIZE)
+	{
+		return false;
+	}
+
+	// TODO: Rest of implementation.
+
+	return true;
+}
+
+
+// Checks a potential match.
+bool CheckForMatch(const Limb *buffer, const Number<LIMB_COUNT> &modulus, unsigned block, unsigned thread, bool negative)
+{
+	// Deinterleave the input.
+	Number<LIMB_COUNT> deinterleaved;
+	DeinterleaveNumber(deinterleaved.m_limbs, buffer, block, thread);
+
+	// Subtract from the modulus if negative is true.
+	if (negative)
+	{
+		Limb borrow = 0;
+		for (unsigned i = 0; i < LIMB_COUNT; ++i)
+		{
+			DoubleLimb difference = static_cast<DoubleLimb>(modulus.m_limbs[i]) - deinterleaved.m_limbs[i] - borrow;
+			deinterleaved.m_limbs[i] = static_cast<Limb>(difference);
+			borrow = static_cast<Limb>(difference >> ((LIMB_BITS * 2) - 1));
+		}
+	}
+
+	// Return whether the pattern matches.
+	return IsWhatWeWant(deinterleaved.m_gmp);
+}
+
+
+// Search for matches.
+bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &matchedNegative,
+	const Limb *nextBuffer, const Number<LIMB_COUNT> &modulus)
+{
+	// The three constants to check for.
+	static const Limb check1 = 0x00020000;
+	Limb check2 = modulus.m_limbs[LIMB_COUNT - 1] - check1;
+	Limb check3 = check2 - 0x10000;
+
+	// Pointer to plaintext half.
+	const Limb *plaintext = nextBuffer + TOTAL_LIMB_COUNT;
+
+	// Search each block.
+	for (unsigned block = 0; block < NUM_BLOCKS; ++block)
+	{
+		// Get pointer to plaintext for this block.
+		const Limb *blockPlaintext = plaintext + (block * BLOCK_LIMB_COUNT);
+
+		// Get pointer to the last limb of the plaintext for each thread.
+		const Limb *blockLastLimb = blockPlaintext + ((LIMB_COUNT - 1) * NUM_THREADS);
+
+		// Search this block.
+		for (unsigned thread = 0; thread < NUM_THREADS; ++thread)
+		{
+			Limb high = blockLastLimb[thread] & 0xFFFF0000;
+
+			if ((high == check1) || (high == check2) || (high == check3))
+			{
+				bool negative = high != check1;
+				if (CheckForMatch(plaintext, modulus, block, thread, negative))
+				{
+					matchedBlock = block;
+					matchedThread = thread;
+					matchedNegative = negative;
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+
+// Verify and report match.  Shows errors if no match.
+bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_t gmpRoot, unsigned long long round, bool negative)
+{
+	// Load base as a GMP number.
+	MPZNumber gmpBase;
+	FromLimbArray(gmpBase, base.m_gmp);
+
+	// Take the base to the power of the round number plus 1.
+	// This is the number of times we multiplied by the multiplier.
+	MPZNumber gmpPower;
+	mpz_powm_ui(gmpPower, gmpRoot, round + 1, gmpModulus);
+
+	// Multiply by the original base.
+	MPZNumber gmpSignature;
+	mpz_mul(gmpSignature, gmpBase, gmpPower);
+	mpz_mod(gmpSignature, gmpSignature, gmpModulus);
+
+	return false;
+}
+
+
+// Main program.
+#ifdef _WIN32
+extern "C" int __cdecl wmain()
+#else
+int main()
+#endif
 {
 	// Initialize random generator.
 	ReadRandom(xorshift_s, sizeof(xorshift_s));
@@ -361,7 +400,6 @@ int wmain()
 	MPZNumber gmpModulus;
 	mpz_set_str(gmpModulus, s_modulusText, 16);
 
-	// Initialize constants.
 	MPZNumber gmpR;
 	mpz_setbit(gmpR, MODULUS_BITS);
 
@@ -380,6 +418,13 @@ int wmain()
 
 	MPZNumber gmpMultiplierMontgomery;
 	mpz_set_str(gmpMultiplierMontgomery, s_multiplierMontgomery, 16);
+
+	MPZNumber gmpMultiplierRoot;
+	mpz_set_str(gmpMultiplierRoot, s_root, 16);
+
+	// Get modulus as a raw number.
+	Number<LIMB_COUNT> modulus;
+	ToLimbArray(modulus.m_gmp, gmpModulus);
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
 	cudaError_t cudaStatus = cudaSetDevice(0);
@@ -439,6 +484,45 @@ int wmain()
 			unsigned nextBuffer = currentBuffer ^ 1;
 
 			GPUExecuteOperation(buffer[nextBuffer], buffer[currentBuffer]);
+
+		#ifdef ENABLE_VERIFY_MODE
+			MPZNumber gmpCorrect;
+			Number<LIMB_COUNT> correct;
+			Number<LIMB_COUNT> attempt;
+
+			for (unsigned i = 0; i < NUM_BLOCKS; ++i)
+			{
+				for (unsigned j = 0; j < NUM_THREADS; ++j)
+				{
+					DeinterleaveNumber(attempt.m_limbs, buffer[nextBuffer], i, j);
+
+					DeinterleaveNumber(correct.m_limbs, buffer[currentBuffer], i, j);
+					FromLimbArray(gmpCorrect, correct.m_gmp);
+
+					mpz_mul(gmpCorrect, gmpCorrect, gmpMultiplierMontgomery);
+					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
+					mpz_mul(gmpCorrect, gmpCorrect, gmpRInverse);
+					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
+					ToLimbArray(correct.m_gmp, gmpCorrect);
+
+					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
+					{
+						__debugbreak();
+					}
+
+					DeinterleaveNumber(attempt.m_limbs, &buffer[nextBuffer][TOTAL_LIMB_COUNT], i, j);
+
+					mpz_mul(gmpCorrect, gmpCorrect, gmpRInverse);
+					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
+					ToLimbArray(correct.m_gmp, gmpCorrect);
+
+					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
+					{
+						__debugbreak();
+					}
+				}
+			}
+		#endif
 
 			total += NUM_BLOCKS * NUM_THREADS;
 			check += buffer[currentBuffer][12345];

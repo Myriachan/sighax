@@ -146,7 +146,7 @@
 
 
 // The GPU code.
-__global__ void MultiplyStuffKernel(Limb *dest, const Limb *src)
+__global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 {
 	// Start of code.
 
@@ -176,6 +176,7 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *src)
 	Limb var_m = 0;
 	Limb var_carry = 0;
 	Limb var_temp = 0;
+
 
 	// Reduce subroutine.  Multiplies by R^-1 mod n.
 	auto reduce = [&]()
@@ -216,6 +217,7 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *src)
 			:	"+r"(var_t63), "+r"(var_t64), "+r"(var_t65), "+r"(var_carry));
 	};
 
+
 	// Subroutine to write results.
 	auto writeResults = [&](unsigned offset)
 	{
@@ -236,80 +238,85 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *src)
 		STORE_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
 	};
 
+
+	// First round moved out of main loop.
+	// First round is special, because registers not set yet.
+	// Multiplier for this round.
+	var_multiplicand = src[(0 * NUM_THREADS) + threadIdx.x];
+
+	asm(
+		"mul.lo.u32 %0, %1, " MULTIPLIER_WORD_00 ";\n\t"
+		"mul.hi.u32 %2, %1, " MULTIPLIER_WORD_00 ";\n\t"
+		:	"+r"(var_t00), "+r"(var_multiplicand), "+r"(var_carry));
+
+	#define MULTIPLY_FIRST_ROUND(num) \
+		asm( \
+			"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_##num ", %2;\n\t" \
+			"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_##num ", 0;\n\t" \
+			:	"+r"(var_t##num), "+r"(var_multiplicand), "+r"(var_carry))
+
+	#define MULTIPLY_FIRST_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+		MULTIPLY_FIRST_ROUND(r1); MULTIPLY_FIRST_ROUND(r2); MULTIPLY_FIRST_ROUND(r3); \
+		MULTIPLY_FIRST_ROUND(r4); MULTIPLY_FIRST_ROUND(r5); MULTIPLY_FIRST_ROUND(r6); \
+		MULTIPLY_FIRST_ROUND(r7); MULTIPLY_FIRST_ROUND(r8); MULTIPLY_FIRST_ROUND(r9);
+
+	MULTIPLY_FIRST_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+	MULTIPLY_FIRST_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+	MULTIPLY_FIRST_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+	MULTIPLY_FIRST_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+	MULTIPLY_FIRST_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+	MULTIPLY_FIRST_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+	MULTIPLY_FIRST_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+
+	var_t64 = var_carry;
+	var_t65 = 0;
+
+	// Reduce - multiply by R^-1 mod n.
+	reduce();
+
+
 	// Main multiplication-reduction loop.
-	for (unsigned i = 0; i < LIMB_COUNT; ++i)
+	for (unsigned i = 1; i < LIMB_COUNT; ++i)
 	{
 		// Multiplier for this round.
 		var_multiplicand = src[(i * NUM_THREADS) + threadIdx.x];
 
-		// First round is special, because registers not set yet.
-		if (i == 0)
-		{
-			asm(
-				"mul.lo.u32 %0, %1, " MULTIPLIER_WORD_00 ";\n\t"
-				"mul.hi.u32 %2, %1, " MULTIPLIER_WORD_00 ";\n\t"
-				:	"+r"(var_t00), "+r"(var_multiplicand), "+r"(var_carry));
+		// Every round after the first is this way.
+		asm(
+			"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_00 ", %0;\n\t"
+			"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_00 ", 0;\n\t"  // note no % on this 0
+			:	"+r"(var_t00), "+r"(var_multiplicand), "+r"(var_carry));
 
-			#define MULTIPLY_FIRST_ROUND(num) \
-				asm( \
-					"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_##num ", %2;\n\t" \
-					"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_##num ", 0;\n\t" \
-					:	"+r"(var_t##num), "+r"(var_multiplicand), "+r"(var_carry))
+		#define MULTIPLY_ROUND(num) \
+			asm( \
+				"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_##num ", %0;\n\t" \
+				"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_##num ", 0;\n\t" /* note no % on 0 */ \
+				"add.cc.u32 %0, %0, %3;\n\t" \
+				"addc.u32 %3, %2, 0;\n\t" /* note no % on 0 */ \
+				:	"+r"(var_t##num), "+r"(var_multiplicand), "+r"(var_temp), "+r"(var_carry))
 
-			#define MULTIPLY_FIRST_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
-				MULTIPLY_FIRST_ROUND(r1); MULTIPLY_FIRST_ROUND(r2); MULTIPLY_FIRST_ROUND(r3); \
-				MULTIPLY_FIRST_ROUND(r4); MULTIPLY_FIRST_ROUND(r5); MULTIPLY_FIRST_ROUND(r6); \
-				MULTIPLY_FIRST_ROUND(r7); MULTIPLY_FIRST_ROUND(r8); MULTIPLY_FIRST_ROUND(r9);
+		#define MULTIPLY_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			MULTIPLY_ROUND(r1); MULTIPLY_ROUND(r2); MULTIPLY_ROUND(r3); \
+			MULTIPLY_ROUND(r4); MULTIPLY_ROUND(r5); MULTIPLY_ROUND(r6); \
+			MULTIPLY_ROUND(r7); MULTIPLY_ROUND(r8); MULTIPLY_ROUND(r9)
 
-			MULTIPLY_FIRST_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
-			MULTIPLY_FIRST_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
-			MULTIPLY_FIRST_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
-			MULTIPLY_FIRST_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
-			MULTIPLY_FIRST_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
-			MULTIPLY_FIRST_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
-			MULTIPLY_FIRST_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+		MULTIPLY_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+		MULTIPLY_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+		MULTIPLY_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+		MULTIPLY_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+		MULTIPLY_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+		MULTIPLY_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+		MULTIPLY_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
 
-			var_t64 = var_carry;
-			var_t65 = 0;
-
-		}
-		else
-		{
-			asm(
-				"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_00 ", %0;\n\t"
-				"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_00 ", 0;\n\t"  // note no % on this 0
-				:	"+r"(var_t00), "+r"(var_multiplicand), "+r"(var_carry));
-
-			#define MULTIPLY_ROUND(num) \
-				asm( \
-					"mad.lo.cc.u32 %0, %1, " MULTIPLIER_WORD_##num ", %0;\n\t" \
-					"madc.hi.u32 %2, %1, " MULTIPLIER_WORD_##num ", 0;\n\t" /* note no % on 0 */ \
-					"add.cc.u32 %0, %0, %3;\n\t" \
-					"addc.u32 %3, %2, 0;\n\t" /* note no % on 0 */ \
-					:	"+r"(var_t##num), "+r"(var_multiplicand), "+r"(var_temp), "+r"(var_carry))
-
-			#define MULTIPLY_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
-				MULTIPLY_ROUND(r1); MULTIPLY_ROUND(r2); MULTIPLY_ROUND(r3); \
-				MULTIPLY_ROUND(r4); MULTIPLY_ROUND(r5); MULTIPLY_ROUND(r6); \
-				MULTIPLY_ROUND(r7); MULTIPLY_ROUND(r8); MULTIPLY_ROUND(r9)
-
-			MULTIPLY_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
-			MULTIPLY_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
-			MULTIPLY_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
-			MULTIPLY_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
-			MULTIPLY_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
-			MULTIPLY_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
-			MULTIPLY_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
-
-			asm(
-				"add.cc.u32 %0, %0, %1;\n\t"
-				"addc.u32 %2, %2, 0;\n\t" // note no % on 0
-				:	"+r"(var_t64), "+r"(var_carry), "+r"(var_t65));
-		}
+		asm(
+			"add.cc.u32 %0, %0, %1;\n\t"
+			"addc.u32 %2, %2, 0;\n\t" // note no % on 0
+			:	"+r"(var_t64), "+r"(var_carry), "+r"(var_t65));
 
 		// Reduce - multiply by R^-1 mod n.
 		reduce();
 	}
+
 
 	// Function to subtract the modulus if the result is greater than or equal
 	// to the modulus.
@@ -446,6 +453,30 @@ cudaError_t GPUExecuteOperation(
 		cudaFree(d_src);
 		cudaFree(d_dest);
 		return cudaStatus;
+	}
+
+	cudaFuncAttributes attributes;
+	cudaStatus = cudaFuncGetAttributes(&attributes, reinterpret_cast<void *>(MultiplyStuffKernel));
+	if (cudaStatus != cudaSuccess)
+	{
+		cudaFree(d_src);
+		cudaFree(d_dest);
+		return cudaStatus;
+	}
+
+	static bool s_printed = false;
+	if (!s_printed)
+	{
+		#define OUTPUT_DEBUG(field, formatter) std::printf(#field " = " formatter "\n", field)
+		OUTPUT_DEBUG(attributes.sharedSizeBytes, "%zu");
+		OUTPUT_DEBUG(attributes.constSizeBytes, "%zu");
+		OUTPUT_DEBUG(attributes.localSizeBytes, "%zu");
+		OUTPUT_DEBUG(attributes.maxThreadsPerBlock, "%d");
+		OUTPUT_DEBUG(attributes.numRegs, "%d");
+		OUTPUT_DEBUG(attributes.ptxVersion, "%d");
+		OUTPUT_DEBUG(attributes.binaryVersion, "%d");
+		OUTPUT_DEBUG(attributes.cacheModeCA, "%d");
+		s_printed = true;
 	}
 
 	// Execute operation.
