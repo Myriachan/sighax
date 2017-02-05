@@ -8,7 +8,17 @@
 // * Normmatt: Ported to Windows.
 // * derrek: For finding the SigHax flaw in boot9 in the first place. <3
 
+// PROFILE_MODE makes this program run for timing purposes, rather than
+// actually searching.
 //#define PROFILE_MODE
+
+// SIGNATURE_IS_PKCS1 means that s_signature, when taken to the 65537th power
+// mod the modulus, is a PKCS #1 encoded block.  That is, s_signature is a
+// valid signature matching s_modulus.  If you disable this flag, s_signature
+// is any number you want; it doesn't need to match the modulus.  Setting this
+// flag when it isn't true will cause an "exponential build error" when a
+// match is found.
+#define SIGNATURE_IS_PKCS1
 
 #include <cinttypes>
 #include <climits>
@@ -247,6 +257,7 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 	Single block;
 	ToLimbArray(block, mpzBlock);
 
+#ifdef SIGNATURE_IS_PKCS1
 	// This is the PKCS #1 "01 FF FF FF ..." padding plus one.
 	Single paddingBase;
 	std::memset(paddingBase, 0, sizeof(paddingBase));
@@ -258,6 +269,7 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 
 	mp_limb_t paddingNegShort[7];
 	std::memcpy(paddingNegShort, paddingNegLong, sizeof(paddingNegShort));
+#endif // SIGNATURE_IS_PKCS1
 
 	// Main loop.
 	Single randomBase;
@@ -290,8 +302,11 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 		}
 		else
 		{
-			// Multiply by the decrypted signature block.  We take advantage of a simple math
-			// fact combined with the PKCS #1 signature format:
+			// Multiply by the decrypted signature block.
+		#ifdef SIGNATURE_IS_PKCS1
+
+			// When s_signature is a valid PKCS #1 signature modulo s_modulus, we take advantage
+			// of a simple math fact combined with the PKCS #1 signature format:
 			//
 			// 0x1FFFFFFFFFFF..00<408 other bits> * x
 			//    =
@@ -310,6 +325,14 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 
 			// Subtract off the result of the 2048x408-bit multiply.
 			mpn_sub(next, prev, 2 * KEY_LIMB_SIZE, next, KEY_LIMB_SIZE + countof(paddingNegShort));
+
+		#else  // SIGNATURE_IS_PKCS1
+
+			// When s_signature is not a valid PKCS #1 signature modulo s_modulus, we can't do
+			// the above trick and instead must do an ordinary multiply.
+			mpn_mul_n(next, prev, block, KEY_LIMB_SIZE);
+
+		#endif
 
 			// Reduce the product modulo the key modulus.  This is now the dominating force
 			// in performance, since it's significantly more expensive than the multiplication
