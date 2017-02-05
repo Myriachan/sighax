@@ -516,7 +516,7 @@ int main()
 	// Main search loop.  Seed won't overflow in our timeframe.
 	for (unsigned seed = 0; ; ++seed)
 	{
-		std::printf("Seeding seed 0...\n");
+		std::printf("Seeding seed %u...\n", seed);
 		std::fflush(stdout);
 
 		// Generate new random numbers to use.
