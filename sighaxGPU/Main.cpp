@@ -10,7 +10,7 @@
 #ifdef _DEBUG
 	#define ENABLE_VERIFY_MODE
 #endif
-#define PROFILE_MODE
+//#define PROFILE_MODE
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
@@ -335,7 +335,7 @@ bool CheckForMatch(const Limb *buffer, const Number<LIMB_COUNT> &modulus, unsign
 
 // Search for matches.
 bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &matchedNegative,
-	const Limb *nextBuffer, const Number<LIMB_COUNT> &modulus)
+	const Limb *buffer, const Number<LIMB_COUNT> &modulus)
 {
 	// The three constants to check for.
 	static const Limb check1 = 0x00020000;
@@ -344,14 +344,11 @@ bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &mat
 	check2 &= 0xFFFF0000;
 	check3 &= 0xFFFF0000;
 
-	// Pointer to plaintext half.
-	const Limb *plaintext = nextBuffer + TOTAL_LIMB_COUNT;
-
 	// Search each block.
 	for (unsigned block = 0; block < NUM_BLOCKS; ++block)
 	{
 		// Get pointer to plaintext for this block.
-		const Limb *blockPlaintext = plaintext + (block * BLOCK_LIMB_COUNT);
+		const Limb *blockPlaintext = buffer + (block * BLOCK_LIMB_COUNT);
 
 		// Get pointer to the last limb of the plaintext for each thread.
 		const Limb *blockLastLimb = blockPlaintext + ((LIMB_COUNT - 1) * NUM_THREADS);
@@ -364,7 +361,7 @@ bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &mat
 			if ((high == check1) || (high == check2) || (high == check3))
 			{
 				bool negative = high != check1;
-				if (CheckForMatch(plaintext, modulus, block, thread, negative))
+				if (CheckForMatch(buffer, modulus, block, thread, negative))
 				{
 					matchedBlock = block;
 					matchedThread = thread;
@@ -476,22 +473,20 @@ int main()
 	Number<LIMB_COUNT> modulus;
 	ToLimbArray(modulus.m_gmp, gmpModulus);
 
-	// Choose which GPU to run on, change this on a multi-GPU system.
-	cudaError_t cudaStatus = cudaSetDevice(0);
+	// Initialize the GPU and allocate GPU memory.
+	GPUState gpu;
+	cudaError_t cudaStatus = gpu.Initialize();
 	if (cudaStatus != cudaSuccess)
 	{
-		std::fprintf(stderr, "cudaSetDevice failed (%d)!  Do you have a CUDA-capable GPU installed?\n",
-			static_cast<int>(cudaStatus));
+		std::fprintf(stderr, "GPUState::Initialize failed (%d)!\n", static_cast<int>(cudaStatus));
 		return 1;
 	}
 
 	// Allocate our list of bases.
 	Number<LIMB_COUNT> *bases = new Number<LIMB_COUNT>[NUM_BLOCKS * NUM_THREADS];
 
-	// Allocate our communication buffers.
-	Limb *buffer[2];
-	buffer[0] = new Limb[TOTAL_LIMB_COUNT * 2];
-	buffer[1] = new Limb[TOTAL_LIMB_COUNT * 2];
+	// Allocate our communication buffer.
+	Limb *buffer = new Limb[TOTAL_LIMB_COUNT];
 
 	for (;;)
 	{
@@ -501,7 +496,7 @@ int main()
 		// Generate new random numbers to use.
 		for (unsigned block = 0; block < NUM_BLOCKS; ++block)
 		{
-			Limb *blockBase = buffer[0] + (block * BLOCK_LIMB_COUNT);
+			Limb *blockBase = buffer + (block * BLOCK_LIMB_COUNT);
 			for (unsigned thread = 0; thread < NUM_THREADS; ++thread)
 			{
 				Number<LIMB_COUNT> initialValue;
@@ -516,7 +511,8 @@ int main()
 			}
 		}
 
-		bases = bases;
+		// Re-seed the round.
+		gpu.Reseed(0, buffer);
 
 		std::printf("Searching...\n");
 		std::fflush(stdout);
@@ -530,80 +526,32 @@ int main()
 			//std::printf("Executing round %u...\n", round);
 			//std::fflush(stdout);
 
-			unsigned currentBuffer = round & 1;
-			unsigned nextBuffer = currentBuffer ^ 1;
-
-			cudaError_t status = GPUExecuteOperation(buffer[nextBuffer], buffer[currentBuffer]);
-			if (status != cudaSuccess)
+			cudaStatus = gpu.Execute(round & 1, buffer);
+			if (cudaStatus != cudaSuccess)
 			{
-				std::printf("GPUExecuteOperation failed: %d\n", static_cast<int>(status));
+				std::printf("GPUExecuteOperation failed: %d\n", static_cast<int>(cudaStatus));
 				goto done;
 			}
 
-		#ifdef ENABLE_VERIFY_MODE
-			MPZNumber gmpCorrect;
-			Number<LIMB_COUNT> correct;
-			Number<LIMB_COUNT> attempt;
-
-			for (unsigned i = 0; i < NUM_BLOCKS; ++i)
-			{
-				for (unsigned j = 0; j < NUM_THREADS; ++j)
-				{
-					DeinterleaveNumber(attempt.m_limbs, buffer[nextBuffer], i, j);
-
-					DeinterleaveNumber(correct.m_limbs, buffer[currentBuffer], i, j);
-					FromLimbArray(gmpCorrect, correct.m_gmp);
-
-					mpz_mul(gmpCorrect, gmpCorrect, gmpMultiplierMontgomery);
-					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
-					mpz_mul(gmpCorrect, gmpCorrect, gmpRInverse);
-					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
-					ToLimbArray(correct.m_gmp, gmpCorrect);
-
-					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
-					{
-						std::printf("failed(1) at %u:%u:%u\n", round, i, j);
-						std::fflush(stdout);
-						__debugbreak();
-					}
-
-					DeinterleaveNumber(attempt.m_limbs, &buffer[nextBuffer][TOTAL_LIMB_COUNT], i, j);
-
-					mpz_mul(gmpCorrect, gmpCorrect, gmpRInverse);
-					mpz_mod(gmpCorrect, gmpCorrect, gmpModulus);
-					ToLimbArray(correct.m_gmp, gmpCorrect);
-
-					if (std::memcmp(attempt.m_limbs, correct.m_limbs, sizeof(attempt.m_limbs)))
-					{
-						std::printf("failed(2) at %u:%u:%u\n", round, i, j);
-						std::fflush(stdout);
-						__debugbreak();
-					}
-				}
-			}
-		#endif
-
 			// Check for matches.
+			unsigned block;
+			unsigned thread;
+			bool negative;
+			if (SearchForMatches(block, thread, negative, buffer, modulus))
 			{
-				unsigned block;
-				unsigned thread;
-				bool negative;
-				if (SearchForMatches(block, thread, negative, buffer[nextBuffer], modulus))
+				if (VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
+						gmpMultiplierRoot, round, negative))
 				{
-					if (VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
-							gmpMultiplierRoot, round, negative))
-					{
-						goto done;
-					}
-					else
-					{
-						std::abort();
-					}
+					goto done;
+				}
+				else
+				{
+					std::abort();
 				}
 			}
 
 			total += NUM_BLOCKS * NUM_THREADS;
-			check += buffer[currentBuffer][12345];
+			check += buffer[12345];
 		}
 
 		std::clock_t meowEnd = std::clock();
@@ -626,8 +574,7 @@ done:
 		return 1;
 	}
 
-	delete[] buffer[0];
-	delete[] buffer[1];
+	delete[] buffer;
 	delete[] bases;
 	return 0;
 }

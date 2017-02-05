@@ -423,51 +423,89 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 }
 
 
-// Execute the math operation.
-cudaError_t GPUExecuteOperation(
-	Limb dest[TOTAL_LIMB_COUNT * 2],
-	const Limb src[TOTAL_LIMB_COUNT])
+// Constructor to just null out the pointers.
+GPUState::GPUState()
 {
-	cudaError_t cudaStatus;
+	d_buffers[0] = nullptr;
+	d_buffers[1] = nullptr;
+}
 
-	// Allocate memory for data transfers.
-	void *d_src;
-	cudaStatus = cudaMalloc(&d_src, sizeof(Limb[TOTAL_LIMB_COUNT]));
-	if (cudaStatus != cudaSuccess)
+
+// Destructor to free resources.
+GPUState::~GPUState()
+{
+	if (d_buffers[0])
 	{
-		return cudaStatus;
+		cudaFree(d_buffers[0]);
+		d_buffers[0] = nullptr;
 	}
 
-	void *d_dest;
-	cudaStatus = cudaMalloc(&d_dest, sizeof(Limb[TOTAL_LIMB_COUNT * 2]));
-	if (cudaStatus != cudaSuccess)
+	if (d_buffers[1])
 	{
-		cudaFree(d_src);
-		return cudaStatus;
+		cudaFree(d_buffers[1]);
+		d_buffers[1] = nullptr;
 	}
 
-	// Copy parameters over.
-	cudaStatus = cudaMemcpy(d_src, src, sizeof(Limb[TOTAL_LIMB_COUNT]), cudaMemcpyHostToDevice);
-	if (cudaStatus != cudaSuccess)
+	cudaDeviceReset();
+}
+
+
+// Main initialization function.
+cudaError_t GPUState::Initialize()
+{
+	cudaError_t status;
+
+	// Choose which GPU to run on, change this on a multi-GPU system.
+	status = cudaSetDevice(0);
+	if (status != cudaSuccess)
 	{
-		cudaFree(d_src);
-		cudaFree(d_dest);
-		return cudaStatus;
+		return status;
 	}
 
+	// Allocate the two buffers.
+	status = cudaMalloc(&d_buffers[0], sizeof(Limb[TOTAL_LIMB_COUNT * 2]));
+	if (status != cudaSuccess)
+	{
+		d_buffers[0] = nullptr;
+		return status;
+	}
+
+	status = cudaMalloc(&d_buffers[1], sizeof(Limb[TOTAL_LIMB_COUNT * 2]));
+	if (status != cudaSuccess)
+	{
+		d_buffers[1] = nullptr;
+		return status;
+	}
+
+	return cudaSuccess;
+}
+
+
+// Reseeds the state for a new round.
+cudaError_t GPUState::Reseed(unsigned currentSrc, const Limb seed[TOTAL_LIMB_COUNT])
+{
+	// Copy to the specified buffer.
+	return cudaMemcpy(d_buffers[currentSrc], seed, sizeof(Limb[TOTAL_LIMB_COUNT]), cudaMemcpyHostToDevice);
+}
+
+
+// Execute the math operation.
+cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT])
+{
+	cudaError_t status;
+
+	// Debug information.
 	cudaFuncAttributes attributes;
-	cudaStatus = cudaFuncGetAttributes(&attributes, reinterpret_cast<void *>(MultiplyStuffKernel));
-	if (cudaStatus != cudaSuccess)
+	status = cudaFuncGetAttributes(&attributes, reinterpret_cast<void *>(MultiplyStuffKernel));
+	if (status != cudaSuccess)
 	{
-		cudaFree(d_src);
-		cudaFree(d_dest);
-		return cudaStatus;
+		return status;
 	}
 
 	static bool s_printed = false;
 	if (!s_printed)
 	{
-		#define OUTPUT_DEBUG(field, formatter) std::printf(#field " = " formatter "\n", field)
+	#define OUTPUT_DEBUG(field, formatter) std::printf(#field " = " formatter "\n", field)
 		OUTPUT_DEBUG(attributes.sharedSizeBytes, "%zu");
 		OUTPUT_DEBUG(attributes.constSizeBytes, "%zu");
 		OUTPUT_DEBUG(attributes.localSizeBytes, "%zu");
@@ -480,32 +518,26 @@ cudaError_t GPUExecuteOperation(
 	}
 
 	// Execute operation.
-	MultiplyStuffKernel<<<NUM_BLOCKS, NUM_THREADS>>>(static_cast<Limb *>(d_dest), static_cast<Limb *>(d_src));
+	MultiplyStuffKernel<<<NUM_BLOCKS, NUM_THREADS>>>(
+		static_cast<Limb *>(d_buffers[currentSrc ^ 1]),
+		static_cast<Limb *>(d_buffers[currentSrc]));
 
 	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess)
+	status = cudaGetLastError();
+	if (status != cudaSuccess)
 	{
-		cudaFree(d_src);
-		cudaFree(d_dest);
-		return cudaStatus;
+		return status;
 	}
 
 	// cudaDeviceSynchronize waits for the kernel to finish, and returns
 	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess)
+	status = cudaDeviceSynchronize();
+	if (status != cudaSuccess)
 	{
-		cudaFree(d_src);
-		cudaFree(d_dest);
-		return cudaStatus;
+		return status;
 	}
 
 	// Copy result to host.
-	cudaStatus = cudaMemcpy(dest, d_dest, sizeof(Limb[TOTAL_LIMB_COUNT * 2]), cudaMemcpyDeviceToHost);
-
-	cudaFree(d_src);
-	cudaFree(d_dest);
-
-	return cudaStatus;
+	return cudaMemcpy(output, static_cast<char *>(d_buffers[currentSrc ^ 1]) + sizeof(Limb[TOTAL_LIMB_COUNT]), 
+		sizeof(Limb[TOTAL_LIMB_COUNT]), cudaMemcpyDeviceToHost);
 }

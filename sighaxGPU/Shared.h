@@ -45,6 +45,18 @@ enum
 };
 
 
-cudaError_t GPUExecuteOperation(
-	Limb dest[TOTAL_LIMB_COUNT * 2],
-	const Limb src[TOTAL_LIMB_COUNT]);
+class GPUState
+{
+public:
+	GPUState();
+	~GPUState();
+
+	cudaError_t Initialize();
+
+	cudaError_t Reseed(unsigned currentSrc, const Limb seed[TOTAL_LIMB_COUNT]);
+
+	cudaError_t Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT]);
+
+private:
+	void *d_buffers[2];
+};
