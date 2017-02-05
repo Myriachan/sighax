@@ -5,6 +5,10 @@
 #include <climits>
 #include <limits>
 
+// The modulus to use.
+#include "../Moduli/FIRM-NAND-retail.h"
+
+
 typedef std::uint32_t Limb;
 typedef std::uint64_t DoubleLimb;
 
