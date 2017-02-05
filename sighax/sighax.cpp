@@ -12,13 +12,8 @@
 // actually searching.
 //#define PROFILE_MODE
 
-// SIGNATURE_IS_PKCS1 means that s_signature, when taken to the 65537th power
-// mod the modulus, is a PKCS #1 encoded block.  That is, s_signature is a
-// valid signature matching s_modulus.  If you disable this flag, s_signature
-// is any number you want; it doesn't need to match the modulus.  Setting this
-// flag when it isn't true will cause an "exponential build error" when a
-// match is found.
-#define SIGNATURE_IS_PKCS1
+// The modulus to use.
+#include "../Moduli/FIRM-NAND-retail.h"
 
 #include <cinttypes>
 #include <climits>
@@ -63,31 +58,6 @@ static_assert(KEY_BITS % std::numeric_limits<mp_limb_t>::digits == 0, "bad mp_li
 typedef mp_limb_t Single[KEY_LIMB_SIZE];
 typedef mp_limb_t Double[2 * KEY_LIMB_SIZE];
 typedef mp_limb_t Quad[4 * KEY_LIMB_SIZE];
-
-
-// big-endian
-const char s_modulusText[] =
-	"DECFB6FC3D33E955FDAC90E88817B003A16B9AAB72707932A2A08CBB336FB076"
-	"962EC4E92ED88F92C02D4D410FDE451B253CBE376B458221E64DB1238182B681"
-	"62B730F4604BC7F7F0170CB575887793526370F00BC6734341EEE4F071ECC8C1"
-	"32C4DCA9991D31B8A47EDD19040F02A81AAFB3489A29295E4984E09411D17EAB"
-	"B2C0447EA11B5E9D0D1AF9029A2E53032D48967C2CA6D7ACF1ED2B18BB01CB13"
-	"B9ACA6EE5500377C696162890154779F075D26343AA949A5AFF25E0651B71CE0"
-	"DEDA5C0B9F98C215FDBAD8A99900ABA48E4A169D662AE85664B2B6C093AF4D38"
-	"A0165CE4BD62C2466BC95A594A7258FDB2CC36873085E8A1045BE0179BD0EC9B";
-
-const unsigned long s_publicExponent = 65537;
-
-// sample signed message
-const char s_signature[] =
-	"C26EAACEDD4FF31CD970262B2A6BE06D5CEC1115528CAA6F00BADA3A6B9A886B"
-	"5E35DE4FB7E9E4356C4B06B310CCA15AED2B7B433DAB681B0366CC3C769F6D35"
-	"79E6B816A8F01BE9C58C1A61A5AB817E2C2FC55C8C70F584D8D485E75584D71A"
-	"0EA1A6092751DBE6BCBBE3C119A4CBA5E383E740813129AA4E9CB49DD396BB7F"
-	"97F332FAA24F0A4BCBC362E34D4F09F1395B565CC6153D37F057A0496886E66E"
-	"965BE08A1030EA038BC45DDF6D4F527F3ED41E2545C0E4772EA6A3F97DD2A0C7"
-	"0D340769E8AF211CD1EEB504A96C70B4DE40AD146BF63F509FD56A55358211CC"
-	"27A96914769E50864FF4EEA245A5FFA95265D5733EDB0D33D9D1602F5F3CC8E6";
 
 
 template <typename T, size_t S>
@@ -228,7 +198,7 @@ bool IsWhatWeWant(const mp_limb_t *limbs)
 }
 
 
-void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned long long numIterations)
+void BruteForce(mpz_t mpzModulus, mpz_t mpzRoot, mpz_t mpzBlock, unsigned long long numIterations)
 {
 	enum
 	{
@@ -247,12 +217,12 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 	mpz_t mpzFoundPowered;
 	mpz_init(mpzFoundPowered);
 
-	// Convert the modulus and signature to mpn form.
+	// Convert the modulus and root to mpn form.
 	Single modulus;
 	ToLimbArray(modulus, mpzModulus);
 
-	Single signature;
-	ToLimbArray(signature, mpzSignature);
+	Single root;
+	ToLimbArray(root, mpzRoot);
 
 	Single block;
 	ToLimbArray(block, mpzBlock);
@@ -371,13 +341,13 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 		// Is this what we want?
 		if (match)
 		{
-			// Calculate randomBase*(signature^iteration).
+			// Calculate randomBase*(root^iteration).
 			mpz_set(mpzFoundBase, mpzRandomBase);
 
 			unsigned long long squareCount = iteration % ATTEMPTS_PER_RANDOM;
 			for (unsigned long long i = 0; i < squareCount; ++i)
 			{
-				mpz_mul(mpzFoundBase, mpzFoundBase, mpzSignature);
+				mpz_mul(mpzFoundBase, mpzFoundBase, mpzRoot);
 				mpz_mod(mpzFoundBase, mpzFoundBase, mpzModulus);
 			}
 
@@ -406,7 +376,7 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 
 			std::printf("Match found!!  (mode=%s)\n", (!negative) ? "positive" : "negative");
 			std::printf("iteration = %llu\n", iteration);
-			std::printf("Buffer:\n");
+			std::printf("Result:\n");
 			DumpNumber(mpzFoundPowered);
 			std::printf("Signature:\n");
 			DumpNumber(mpzFoundBase);
@@ -420,13 +390,13 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzSignature, mpz_t mpzBlock, unsigned l
 }
 
 
-void Profile(void(*function)(mpz_t, mpz_t, mpz_t, unsigned long long), mpz_t modulus, mpz_t signature, mpz_t block)
+void Profile(void(*function)(mpz_t, mpz_t, mpz_t, unsigned long long), mpz_t modulus, mpz_t root, mpz_t block)
 {
 	enum : unsigned long long { NUM_ITERATIONS = 10000000 };
 
 	std::clock_t start = std::clock();
 
-	function(modulus, signature, block, NUM_ITERATIONS);
+	function(modulus, root, block, NUM_ITERATIONS);
 
 	std::clock_t end = std::clock();
 
@@ -456,24 +426,24 @@ int main()
 	BackgroundMode();
 
 	mpz_t modulus;
-	mpz_init_set_str(modulus, s_modulusText, 16);
+	mpz_init_set_str(modulus, s_modulus, 16);
 
-	mpz_t signature;
-	mpz_init_set_str(signature, s_signature, 16);
+	mpz_t root;
+	mpz_init_set_str(root, s_root, 16);
 
 	mpz_t block;
 	mpz_init(block);
 
-	mpz_powm_ui(block, signature, s_publicExponent, modulus);
+	mpz_powm_ui(block, root, s_publicExponent, modulus);
 
 	//DumpNumber(sample);
 
 #ifdef PROFILE_MODE
-	Profile(BruteForce, modulus, signature, block);
+	Profile(BruteForce, modulus, root, block);
 #else
-	BruteForce(modulus, signature, block, 10000000);
+	BruteForce(modulus, root, block, 10000000);
 #endif
 
-	mpz_clears(modulus, signature, block, nullptr);
+	mpz_clears(modulus, root, block, nullptr);
 	return 0;
 }
