@@ -288,7 +288,7 @@ bool IsWhatWeWant(const mp_limb_t *limbs)
 		return false;
 	}
 
-/*	// Count how many nonzero bytes are after the 0x02.
+	// Count how many nonzero bytes are after the 0x02.
 	unsigned zeroIndex;
 	for (zeroIndex = 0x02; zeroIndex < KEY_SIZE; ++zeroIndex)
 	{
@@ -303,7 +303,13 @@ bool IsWhatWeWant(const mp_limb_t *limbs)
 		return false;
 	}
 
-	// TODO: Rest of implementation.*/
+	// TODO: Rest of implementation.
+
+	// Dummy implementation for testing.
+	if ((getByte(0x02) != 0xAB) || (getByte(0x03) != 0xCD))
+	{
+		return false;
+	}
 
 	return true;
 }
@@ -377,7 +383,8 @@ bool SearchForMatches(unsigned &matchedBlock, unsigned &matchedThread, bool &mat
 
 
 // Verify and report match.  Shows errors if no match.
-bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_t gmpRoot, unsigned long long round, bool negative)
+bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_t gmpRoot,
+	unsigned seed, unsigned round, unsigned block, unsigned thread, bool negative)
 {
 	// Load base as a GMP number.
 	MPZNumber gmpBase;
@@ -411,19 +418,32 @@ bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_
 
 	if (!IsWhatWeWant(result.m_gmp))
 	{
-		std::printf("Reconstruction error on round %llu\n", round);
+		std::printf("Reconstruction error on seed %u round %u block %u thread %u!\n", seed, round, block, thread);
 		std::fflush(stdout);
 		return false;
 	}
 	else
 	{
-		std::printf("Match found!\n");
+		std::printf("Match found at seed %u round %u block %u thread %u!\n", seed, round, block, thread);
+
+		// The multiply by 2 is because we check both positive and negative.
+		unsigned long long checked = 0;
+		checked += seed;
+		checked *= NUM_ROUNDS;
+		checked += round;
+		checked *= NUM_BLOCKS;
+		checked += block;
+		checked *= NUM_THREADS;
+		checked += thread;
+		checked *= 2;
+		checked += negative ? 1 : 0;
+		std::printf("%llu multiplies checked before match found.\n", checked);
 
 		std::printf("Signature: ");
 		signature.Print();
 		std::puts("");
 
-		std::printf("Signature: ");
+		std::printf("Result: ");
 		result.Print();
 		std::puts("");
 
@@ -488,9 +508,15 @@ int main()
 	// Allocate our communication buffer.
 	Limb *buffer = new Limb[TOTAL_LIMB_COUNT];
 
-	for (;;)
+	// Total operations completed overall.
+	unsigned long long programTotal = 0;
+	
+	std::clock_t programStart = std::clock();
+
+	// Main search loop.  Seed won't overflow in our timeframe.
+	for (unsigned seed = 0; ; ++seed)
 	{
-		std::printf("Seeding...\n");
+		std::printf("Seeding seed 0...\n");
 		std::fflush(stdout);
 
 		// Generate new random numbers to use.
@@ -514,17 +540,19 @@ int main()
 		// Re-seed the round.
 		gpu.Reseed(0, buffer);
 
-		std::printf("Searching...\n");
+		std::printf("Searching seed %u...\n", seed);
 		std::fflush(stdout);
 
-		std::clock_t meowStart = std::clock();
-		unsigned long long total = 0;
-		unsigned long long check = 0;
+		std::clock_t roundStart = std::clock();
+		unsigned long long roundTotal = 0;
 
-		for (unsigned round = 0; round < 1000; ++round)
+		for (unsigned round = 0; round < NUM_ROUNDS; ++round)
 		{
-			//std::printf("Executing round %u...\n", round);
-			//std::fflush(stdout);
+			if ((round % 100) == 0)
+			{
+				std::printf("Executing seed %u round %u...\n", seed, round);
+				std::fflush(stdout);
+			}
 
 			cudaStatus = gpu.Execute(round & 1, buffer);
 			if (cudaStatus != cudaSuccess)
@@ -533,6 +561,10 @@ int main()
 				goto done;
 			}
 
+			// Multiplied by two because we count both positive and negative.
+			roundTotal += NUM_BLOCKS * NUM_THREADS * 2;
+			programTotal += NUM_BLOCKS * NUM_THREADS * 2;
+
 			// Check for matches.
 			unsigned block;
 			unsigned thread;
@@ -540,7 +572,7 @@ int main()
 			if (SearchForMatches(block, thread, negative, buffer, modulus))
 			{
 				if (VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
-						gmpMultiplierRoot, round, negative))
+						gmpMultiplierRoot, seed, round, block, thread, negative))
 				{
 					goto done;
 				}
@@ -549,23 +581,21 @@ int main()
 					std::abort();
 				}
 			}
-
-			total += NUM_BLOCKS * NUM_THREADS;
-			check += buffer[12345];
 		}
 
-		std::clock_t meowEnd = std::clock();
+		std::clock_t roundEnd = std::clock();
 
-		std::printf("check: %016llX\n", check);
-		std::printf("%llu operations in %g seconds (%llu/second)\n",
-			total,
-			static_cast<double>(meowEnd - meowStart) / CLOCKS_PER_SEC,
-			static_cast<unsigned long long>(total / (static_cast<double>(meowEnd - meowStart) / CLOCKS_PER_SEC)));
-
-		break;
+		std::printf("Finished seed %u: %llu operations in %g seconds (%llu/second)\n",
+			seed,
+			roundTotal,
+			static_cast<double>(roundEnd - roundStart) / CLOCKS_PER_SEC,
+			static_cast<unsigned long long>(roundTotal / (static_cast<double>(roundEnd - roundStart) / CLOCKS_PER_SEC)));
+		std::fflush(stdout);
 	}
 
 done:
+	std::clock_t programEnd = std::clock();
+
 	// cudaDeviceReset must be called before exiting in order for profiling and
 	// tracing tools such as Nsight and Visual Profiler to show complete traces.
 	cudaStatus = cudaDeviceReset();
@@ -573,6 +603,12 @@ done:
 		std::fprintf(stderr, "cudaDeviceReset failed (%d)!\n", static_cast<int>(cudaStatus));
 		return 1;
 	}
+
+	std::printf("Finished program: %llu operations in %g seconds (%llu/second)\n",
+		programTotal,
+		static_cast<double>(programEnd - programStart) / CLOCKS_PER_SEC,
+		static_cast<unsigned long long>(programTotal / (static_cast<double>(programEnd - programStart) / CLOCKS_PER_SEC)));
+	std::fflush(stdout);
 
 	delete[] buffer;
 	delete[] bases;

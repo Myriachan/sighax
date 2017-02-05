@@ -502,7 +502,7 @@ cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT]
 		return status;
 	}
 
-	static bool s_printed = false;
+	static bool s_printed = true; //false;
 	if (!s_printed)
 	{
 	#define OUTPUT_DEBUG(field, formatter) std::printf(#field " = " formatter "\n", field)
