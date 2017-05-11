@@ -7,10 +7,14 @@
 #include <cstring>
 
 #include "Shared.h"
+#include "Pattern.h"
 
 
 // The GPU code.
-__global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
+__global__ void MultiplyStuffKernel(
+	Limb *dest,
+	const Limb *__restrict__ src,
+	unsigned char *__restrict__ resultFlags)
 {
 	// Start of code.
 
@@ -83,9 +87,9 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 
 
 	// Subroutine to write results.
-	auto writeResults = [&](unsigned offset)
+	auto writeResults = [&](Limb *d, unsigned span)
 	{
-		#define STORE_ROUND(num) dest[offset + ((1##num - 100) * NUM_THREADS)] = var_t##num;
+		#define STORE_ROUND(num) d[(1##num - 100) * span] = var_t##num;
 
 		#define STORE_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
 			STORE_ROUND(r1); STORE_ROUND(r2); STORE_ROUND(r3); \
@@ -182,6 +186,40 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 	}
 
 
+	// Function to subtract the modulus.
+	auto subtract = [&]()
+	{
+		asm(
+			"sub.cc.u32 %1, %1, " MODULUS_WORD_00 ";\n\t"
+			"addc.u32 %2, 0, 0;\n\t"  // extract carry flag to carry variable
+			:	"+r"(var_temp), "+r"(var_t00), "+r"(var_carry));
+
+		#define SUBTRACT_ROUND(regnum, wordnum) \
+			"subc.cc.u32 %" #regnum ", %" #regnum ", " MODULUS_WORD_##wordnum ";\n\t"
+
+		#define SUBTRACT_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			asm( \
+				"add.cc.u32 %0, %10, 0xFFFFFFFFU;\n\t" /* put carry variable into carry flag */ \
+				SUBTRACT_ROUND(1, r1) SUBTRACT_ROUND(2, r2) SUBTRACT_ROUND(3, r3) \
+				SUBTRACT_ROUND(4, r4) SUBTRACT_ROUND(5, r5) SUBTRACT_ROUND(6, r6) \
+				SUBTRACT_ROUND(7, r7) SUBTRACT_ROUND(8, r8) SUBTRACT_ROUND(9, r9) \
+				"addc.u32 %10, 0, 0;\n\t"  /* extract carry flag to carry variable */ \
+				:	"+r"(var_temp), \
+					"+r"(var_t##r1), "+r"(var_t##r2), "+r"(var_t##r3), \
+					"+r"(var_t##r4), "+r"(var_t##r5), "+r"(var_t##r6), \
+					"+r"(var_t##r7), "+r"(var_t##r8), "+r"(var_t##r9), \
+					"+r"(var_carry))
+
+		SUBTRACT_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+		SUBTRACT_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+		SUBTRACT_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+		SUBTRACT_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+		SUBTRACT_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+		SUBTRACT_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+		SUBTRACT_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+	};
+
+
 	// Function to subtract the modulus if the result is greater than or equal
 	// to the modulus.
 	auto compareReduce1 = [&]()
@@ -220,35 +258,42 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 		// carry is 1 if above or equal, 0 if not (6502 semantics, not x86).
 		if ((var_carry != 0) || (var_t64 != 0))
 		{
-			asm(
-				"sub.cc.u32 %1, %1, " MODULUS_WORD_00 ";\n\t"
-				"addc.u32 %2, 0, 0;\n\t"  // extract carry flag to carry variable
-				:	"+r"(var_temp), "+r"(var_t00), "+r"(var_carry));
-
-			#define SUBTRACT_ROUND(regnum, wordnum) \
-				"subc.cc.u32 %" #regnum ", %" #regnum ", " MODULUS_WORD_##wordnum ";\n\t"
-
-			#define SUBTRACT_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
-				asm( \
-					"add.cc.u32 %0, %10, 0xFFFFFFFFU;\n\t" /* put carry variable into carry flag */ \
-					SUBTRACT_ROUND(1, r1) SUBTRACT_ROUND(2, r2) SUBTRACT_ROUND(3, r3) \
-					SUBTRACT_ROUND(4, r4) SUBTRACT_ROUND(5, r5) SUBTRACT_ROUND(6, r6) \
-					SUBTRACT_ROUND(7, r7) SUBTRACT_ROUND(8, r8) SUBTRACT_ROUND(9, r9) \
-					"addc.u32 %10, 0, 0;\n\t"  /* extract carry flag to carry variable */ \
-					:	"+r"(var_temp), \
-						"+r"(var_t##r1), "+r"(var_t##r2), "+r"(var_t##r3), \
-						"+r"(var_t##r4), "+r"(var_t##r5), "+r"(var_t##r6), \
-						"+r"(var_t##r7), "+r"(var_t##r8), "+r"(var_t##r9), \
-						"+r"(var_carry))
-
-			SUBTRACT_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
-			SUBTRACT_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
-			SUBTRACT_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
-			SUBTRACT_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
-			SUBTRACT_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
-			SUBTRACT_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
-			SUBTRACT_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
+			subtract();
 		}
+	};
+
+
+	// Function to negate modulo the modulus.
+	auto negate = [&]()
+	{
+		asm(
+			"sub.cc.u32 %1, " MODULUS_WORD_00 ", %1;\n\t"
+			"addc.u32 %2, 0, 0;\n\t"  // extract carry flag to carry variable
+			:	"+r"(var_temp), "+r"(var_t00), "+r"(var_carry));
+
+		#define NEGATE_ROUND(regnum, wordnum) \
+			"subc.cc.u32 %" #regnum ", " MODULUS_WORD_##wordnum ", %" #regnum ";\n\t"
+
+		#define NEGATE_ROUND_9(r1, r2, r3, r4, r5, r6, r7, r8, r9) \
+			asm( \
+				"add.cc.u32 %0, %10, 0xFFFFFFFFU;\n\t" /* put carry variable into carry flag */ \
+				NEGATE_ROUND(1, r1) NEGATE_ROUND(2, r2) NEGATE_ROUND(3, r3) \
+				NEGATE_ROUND(4, r4) NEGATE_ROUND(5, r5) NEGATE_ROUND(6, r6) \
+				NEGATE_ROUND(7, r7) NEGATE_ROUND(8, r8) NEGATE_ROUND(9, r9) \
+				"addc.u32 %10, 0, 0;\n\t"  /* extract carry flag to carry variable */ \
+				:	"+r"(var_temp), \
+					"+r"(var_t##r1), "+r"(var_t##r2), "+r"(var_t##r3), \
+					"+r"(var_t##r4), "+r"(var_t##r5), "+r"(var_t##r6), \
+					"+r"(var_t##r7), "+r"(var_t##r8), "+r"(var_t##r9), \
+					"+r"(var_carry))
+
+		NEGATE_ROUND_9(01, 02, 03, 04, 05, 06, 07, 08, 09);
+		NEGATE_ROUND_9(10, 11, 12, 13, 14, 15, 16, 17, 18);
+		NEGATE_ROUND_9(19, 20, 21, 22, 23, 24, 25, 26, 27);
+		NEGATE_ROUND_9(28, 29, 30, 31, 32, 33, 34, 35, 36);
+		NEGATE_ROUND_9(37, 38, 39, 40, 41, 42, 43, 44, 45);
+		NEGATE_ROUND_9(46, 47, 48, 49, 50, 51, 52, 53, 54);
+		NEGATE_ROUND_9(55, 56, 57, 58, 59, 60, 61, 62, 63);
 	};
 
 
@@ -256,7 +301,7 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 	compareReduce1();
 
 	// Write results, which is a*b*R mod n.
-	writeResults((0 * TOTAL_LIMB_COUNT) + threadIdx.x);
+	writeResults(&dest[(0 * TOTAL_LIMB_COUNT) + threadIdx.x], NUM_THREADS);
 
 	// Multiply by R^-1 again so that the actual answer is visible.
 	var_t64 = 0;
@@ -268,7 +313,35 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 	compareReduce1();
 
 	// Write the non-Montgomery results.
-	writeResults((1 * TOTAL_LIMB_COUNT) + threadIdx.x);
+	writeResults(&dest[(1 * TOTAL_LIMB_COUNT) + threadIdx.x], NUM_THREADS);
+
+
+	// Check whether the positive version is a match.
+	Limb checkBuffer[LIMB_COUNT];
+	writeResults(checkBuffer, 1);
+
+	auto getByteFromCheckBuffer = [&checkBuffer](unsigned index) -> unsigned char
+	{
+		index = ((LIMB_COUNT * sizeof(Limb)) - 1) - index;
+		return static_cast<unsigned char>(checkBuffer[index / sizeof(Limb)] >> ((index % sizeof(Limb)) * 8));
+	};
+
+	bool matchPositive = IsWhatWeWant(getByteFromCheckBuffer);
+
+	// Check whether the negative version is a match.
+	negate();
+	writeResults(checkBuffer, 1);
+
+	bool matchNegative = IsWhatWeWant(getByteFromCheckBuffer);
+
+
+	// Flag whether we found a result.
+	int combinedResult = __syncthreads_or(matchPositive || matchNegative);
+
+	if (threadIdx.x == 0)
+	{
+		resultFlags[blockIdx.x] = combinedResult ? 1 : 0;
+	}
 
 #undef DECLARE_OUTPUT_ROUND
 #undef DECLARE_OUTPUT_ROUND_9
@@ -282,6 +355,8 @@ __global__ void MultiplyStuffKernel(Limb *dest, const Limb *__restrict__ src)
 #undef COMPARE_ROUND_9
 #undef SUBTRACT_ROUND
 #undef SUBTRACT_ROUND_9
+#undef NEGATE_ROUND
+#undef NEGATE_ROUND_9
 #undef STORE_ROUND
 #undef STORE_ROUND_9
 }
@@ -292,6 +367,8 @@ GPUState::GPUState()
 {
 	d_buffers[0] = nullptr;
 	d_buffers[1] = nullptr;
+	d_resultFlags = nullptr;
+	h_resultFlags = nullptr;
 }
 
 
@@ -310,6 +387,15 @@ GPUState::~GPUState()
 		d_buffers[1] = nullptr;
 	}
 
+	if (d_resultFlags)
+	{
+		cudaFree(d_resultFlags);
+		d_resultFlags = nullptr;
+	}
+
+	delete[] h_resultFlags;
+	h_resultFlags = nullptr;
+
 	cudaDeviceReset();
 }
 
@@ -327,19 +413,30 @@ cudaError_t GPUState::Initialize()
 	}
 
 	// Allocate the two buffers.
-	status = cudaMalloc(&d_buffers[0], sizeof(Limb[TOTAL_LIMB_COUNT * 2]));
+	status = cudaMalloc(&d_buffers[0], sizeof(Limb) * (TOTAL_LIMB_COUNT * 2));
 	if (status != cudaSuccess)
 	{
 		d_buffers[0] = nullptr;
 		return status;
 	}
 
-	status = cudaMalloc(&d_buffers[1], sizeof(Limb[TOTAL_LIMB_COUNT * 2]));
+	status = cudaMalloc(&d_buffers[1], sizeof(Limb) * (TOTAL_LIMB_COUNT * 2));
 	if (status != cudaSuccess)
 	{
 		d_buffers[1] = nullptr;
 		return status;
 	}
+
+	// Allocate the result flags.
+	status = cudaMalloc(&d_resultFlags, sizeof(unsigned char) * NUM_BLOCKS);
+	if (status != cudaSuccess)
+	{
+		d_resultFlags = nullptr;
+		return status;
+	}
+
+	// Allocate the result flags on the host side.
+	h_resultFlags = new unsigned char[NUM_BLOCKS];
 
 	return cudaSuccess;
 }
@@ -354,7 +451,7 @@ cudaError_t GPUState::Reseed(unsigned currentSrc, const Limb seed[TOTAL_LIMB_COU
 
 
 // Execute the math operation.
-cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT])
+cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT], bool &matchFound)
 {
 	cudaError_t status;
 
@@ -384,7 +481,8 @@ cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT]
 	// Execute operation.
 	MultiplyStuffKernel<<<NUM_BLOCKS, NUM_THREADS>>>(
 		static_cast<Limb *>(d_buffers[currentSrc ^ 1]),
-		static_cast<Limb *>(d_buffers[currentSrc]));
+		static_cast<Limb *>(d_buffers[currentSrc]),
+		static_cast<unsigned char *>(d_resultFlags));
 
 	// Check for any errors launching the kernel
 	status = cudaGetLastError();
@@ -401,7 +499,39 @@ cudaError_t GPUState::Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT]
 		return status;
 	}
 
-	// Copy result to host.
-	return cudaMemcpy(output, static_cast<char *>(d_buffers[currentSrc ^ 1]) + sizeof(Limb[TOTAL_LIMB_COUNT]), 
-		sizeof(Limb[TOTAL_LIMB_COUNT]), cudaMemcpyDeviceToHost);
+	// Copy result flags to host.
+	status = cudaMemcpy(h_resultFlags, d_resultFlags, sizeof(unsigned char) * NUM_BLOCKS, cudaMemcpyDeviceToHost);
+	if (status != cudaSuccess)
+	{
+		return status;
+	}
+
+	// Collapse the result flags down to a single value.
+	DoubleLimb combinedResult = 0;
+
+	static_assert((sizeof(unsigned char) * NUM_BLOCKS) % sizeof(DoubleLimb) == 0,
+		"NUM_BLOCKS not a multiple of DoubleLimb's size");
+
+	for (size_t x = 0; x < (sizeof(unsigned char) * NUM_BLOCKS) / sizeof(DoubleLimb); ++x)
+	{
+		DoubleLimb temp;
+		std::memcpy(&temp, &h_resultFlags[x * sizeof(DoubleLimb)], sizeof(DoubleLimb));
+		combinedResult |= temp;
+	}
+
+	matchFound = (combinedResult != 0);
+
+	// If a match was found, we want the full data.
+	if (matchFound)
+	{
+		// Copy result to host.
+		status = cudaMemcpy(output, static_cast<char *>(d_buffers[currentSrc ^ 1]) + sizeof(Limb[TOTAL_LIMB_COUNT]),
+			sizeof(Limb[TOTAL_LIMB_COUNT]), cudaMemcpyDeviceToHost);
+		if (status != cudaSuccess)
+		{
+			return status;
+		}
+	}
+
+	return cudaSuccess;
 }

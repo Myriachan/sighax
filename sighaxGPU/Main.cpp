@@ -5,9 +5,9 @@
 #include <cstring>
 #include <ctime>
 #include <type_traits>
-#include "Shared.h"
 
-//#define PROFILE_MODE
+#include "Shared.h"
+#include "Pattern.h"
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
@@ -212,57 +212,23 @@ void DeinterleaveNumber(Limb *dest, const Limb *src, unsigned block, unsigned th
 }
 
 
-volatile bool g_meow = false;
-
-
-// Determine whether the given buffer is what we want.
-bool IsWhatWeWant(const mp_limb_t *limbs)
+// Wrapper class for reading bytes from a limb array.
+struct GetByteFromArrayWrapper
 {
-	// Test code - used when profiling so that we never find anything.
-#ifdef PROFILE_MODE
-	if (!g_meow) return false;
-#endif
+	GetByteFromArrayWrapper(const mp_limb_t *limbs)
+	:	m_limbs(limbs)
+	{
+	}
 
-	// For our own sanity, we use big-endian indexing here.
-	// It's much easier to conceptualize that way.
-	auto getByte = [&limbs](std::size_t index) -> const unsigned char &
+	unsigned char operator()(unsigned index)
 	{
 		// unsigned char is allowed to alias in C/C++ rules.
 		static_assert((KEY_SIZE & (KEY_SIZE - 1)) == 0, "KEY_SIZE must be a power of 2");
-		return (reinterpret_cast<const unsigned char *>(limbs))[index ^ (KEY_SIZE - 1)];
-	};
-
-	// A match must begin with 00 02.
-	if ((getByte(0x00) != 0x00) || (getByte(0x01) != 0x02))
-	{
-		return false;
+		return (reinterpret_cast<const unsigned char *>(m_limbs))[index ^ (KEY_SIZE - 1)];
 	}
 
-	// Count how many nonzero bytes are after the 0x02.
-	unsigned zeroIndex;
-	for (zeroIndex = 0x02; zeroIndex < KEY_SIZE; ++zeroIndex)
-	{
-		if (getByte(zeroIndex) == 0x00)
-		{
-			break;
-		}
-	}
-
-	if (zeroIndex >= KEY_SIZE)
-	{
-		return false;
-	}
-
-	// TODO: Rest of implementation.
-
-	// Dummy implementation for testing.
-	if ((getByte(0x02) != 0xAB) || (getByte(0x03) != 0xCD))
-	{
-		return false;
-	}
-
-	return true;
-}
+	const mp_limb_t *m_limbs;
+};
 
 
 // Checks a potential match.
@@ -285,7 +251,7 @@ bool CheckForMatch(const Limb *buffer, const Number<LIMB_COUNT> &modulus, unsign
 	}
 
 	// Return whether the pattern matches.
-	return IsWhatWeWant(deinterleaved.m_gmp);
+	return IsWhatWeWant(GetByteFromArrayWrapper(deinterleaved.m_gmp));
 }
 
 
@@ -366,15 +332,17 @@ bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_
 	Number<LIMB_COUNT> result;
 	ToLimbArray(result.m_gmp, gmpResult);
 
-	if (!IsWhatWeWant(result.m_gmp))
+	if (!IsWhatWeWant(GetByteFromArrayWrapper(result.m_gmp)))
 	{
-		std::printf("Reconstruction error on seed %u round %u block %u thread %u!\n", seed, round, block, thread);
+		std::printf("Reconstruction error on seed %u round %u block %u thread %u mode %s!\n",
+			seed, round, block, thread, negative ? "negative" : "positive");
 		std::fflush(stdout);
 		return false;
 	}
 	else
 	{
-		std::printf("Match found at seed %u round %u block %u thread %u!\n", seed, round, block, thread);
+		std::printf("Match found at seed %u round %u block %u thread %u mode %s!\n",
+			seed, round, block, thread, negative ? "negative" : "positive");
 
 		// The multiply by 2 is because we check both positive and negative.
 		unsigned long long checked = 0;
@@ -504,7 +472,9 @@ int main()
 				std::fflush(stdout);
 			}
 
-			cudaStatus = gpu.Execute(round & 1, buffer);
+			bool matchFound;
+
+			cudaStatus = gpu.Execute(round & 1, buffer, matchFound);
 			if (cudaStatus != cudaSuccess)
 			{
 				std::printf("GPUExecuteOperation failed: %d\n", static_cast<int>(cudaStatus));
@@ -515,20 +485,16 @@ int main()
 			roundTotal += NUM_BLOCKS * NUM_THREADS * 2;
 			programTotal += NUM_BLOCKS * NUM_THREADS * 2;
 
-			// Check for matches.
-			unsigned block;
-			unsigned thread;
-			bool negative;
-			if (SearchForMatches(block, thread, negative, buffer, modulus))
+			// Check for matches if gpu.Execute says that there are any.
+			if (matchFound)
 			{
-				if (VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
-						gmpMultiplierRoot, seed, round, block, thread, negative))
+				unsigned block;
+				unsigned thread;
+				bool negative;
+				if (SearchForMatches(block, thread, negative, buffer, modulus))
 				{
-					goto done;
-				}
-				else
-				{
-					std::abort();
+					VerifyAndReportMatch(bases[(block * NUM_THREADS) + thread], gmpModulus,
+						gmpMultiplierRoot, seed, round, block, thread, negative);
 				}
 			}
 		}

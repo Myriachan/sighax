@@ -8,6 +8,8 @@
 // The modulus to use.
 #include "../Moduli/FIRM-NAND-retail.h"
 
+//#define PROFILE_MODE
+
 
 typedef std::uint32_t Limb;
 typedef std::uint64_t DoubleLimb;
@@ -40,12 +42,12 @@ constexpr size_t countof(const T(&)[S])
 enum
 {
 	NUM_THREADS = 512,
-	NUM_BLOCKS = 1024,
+	NUM_BLOCKS = 4096,
 
 	BLOCK_LIMB_COUNT = NUM_THREADS * LIMB_COUNT,
 	TOTAL_LIMB_COUNT = NUM_BLOCKS * BLOCK_LIMB_COUNT,
 
-	NUM_ROUNDS = 10000,
+	NUM_ROUNDS = 1000,
 };
 
 
@@ -59,8 +61,10 @@ public:
 
 	cudaError_t Reseed(unsigned currentSrc, const Limb seed[TOTAL_LIMB_COUNT]);
 
-	cudaError_t Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT]);
+	cudaError_t Execute(unsigned currentSrc, Limb output[TOTAL_LIMB_COUNT], bool &matchFound);
 
 private:
 	void *d_buffers[2];
+	void *d_resultFlags;
+	unsigned char *h_resultFlags;
 };
