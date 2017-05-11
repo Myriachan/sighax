@@ -7,7 +7,7 @@ __device__ __host__ bool IsWhatWeWant(GetByteLambda &getByte)
 	// Test code - used when profiling so that we never find anything.
 #ifdef PROFILE_MODE
 	static volatile bool s_meow = false;
-	if (!g_meow) return false;
+	if (!s_meow) return false;
 #endif
 
 	// A match must begin with 00 02.
