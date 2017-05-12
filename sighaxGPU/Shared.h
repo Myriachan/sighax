@@ -57,7 +57,7 @@ public:
 	GPUState();
 	~GPUState();
 
-	cudaError_t Initialize();
+	cudaError_t Initialize(int device);
 
 	cudaError_t Reseed(unsigned currentSrc, const Limb seed[TOTAL_LIMB_COUNT]);
 

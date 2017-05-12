@@ -401,12 +401,12 @@ GPUState::~GPUState()
 
 
 // Main initialization function.
-cudaError_t GPUState::Initialize()
+cudaError_t GPUState::Initialize(int device)
 {
 	cudaError_t status;
 
 	// Choose which GPU to run on, change this on a multi-GPU system.
-	status = cudaSetDevice(0);
+	status = cudaSetDevice(device);
 	if (status != cudaSuccess)
 	{
 		return status;

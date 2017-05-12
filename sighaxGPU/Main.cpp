@@ -372,12 +372,18 @@ bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_
 
 
 // Main program.
-#ifdef _WIN32
-extern "C" int __cdecl wmain()
-#else
-int main()
-#endif
+int main(int, char **argv)
 {
+	// Command-line parameters.
+	int optDevice = 0;
+	for (++argv; *argv; ++argv)
+	{
+		if (std::strncmp(*argv, "--gpu=", 6) == 0)
+		{
+			optDevice = static_cast<int>(std::strtol(*argv + 6, nullptr, 0));
+		}
+	}
+
 	// Initialize random generator.
 	ReadRandom(xorshift_s, sizeof(xorshift_s));
 
@@ -413,7 +419,7 @@ int main()
 
 	// Initialize the GPU and allocate GPU memory.
 	GPUState gpu;
-	cudaError_t cudaStatus = gpu.Initialize();
+	cudaError_t cudaStatus = gpu.Initialize(optDevice);
 	if (cudaStatus != cudaSuccess)
 	{
 		std::fprintf(stderr, "GPUState::Initialize failed (%d)!\n", static_cast<int>(cudaStatus));
