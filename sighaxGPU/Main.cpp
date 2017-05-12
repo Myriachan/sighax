@@ -32,6 +32,10 @@
 #endif
 
 
+// Number of rounds.
+unsigned optNumRounds = DEFAULT_NUM_ROUNDS;
+
+
 void ReadRandom(void *data, size_t size)
 {
 #ifdef _WIN32
@@ -347,7 +351,7 @@ bool VerifyAndReportMatch(const Number<LIMB_COUNT> &base, mpz_t gmpModulus, mpz_
 		// The multiply by 2 is because we check both positive and negative.
 		unsigned long long checked = 0;
 		checked += seed;
-		checked *= NUM_ROUNDS;
+		checked *= optNumRounds;
 		checked += round;
 		checked *= NUM_BLOCKS;
 		checked += block;
@@ -381,6 +385,10 @@ int main(int, char **argv)
 		if (std::strncmp(*argv, "--gpu=", 6) == 0)
 		{
 			optDevice = static_cast<int>(std::strtol(*argv + 6, nullptr, 0));
+		}
+		else if (std::strncmp(*argv, "--rounds=", 9) == 0)
+		{
+			optNumRounds = static_cast<int>(std::strtoul(*argv + 9, nullptr, 0));
 		}
 	}
 
@@ -464,17 +472,17 @@ int main(int, char **argv)
 		// Re-seed the round.
 		gpu.Reseed(0, buffer);
 
-		std::printf("Searching seed %u...\n", seed);
+		std::printf("Searching seed %u for %u rounds...\n", seed, optNumRounds);
 		std::fflush(stdout);
 
 		std::clock_t roundStart = std::clock();
 		unsigned long long roundTotal = 0;
 
-		for (unsigned round = 0; round < NUM_ROUNDS; ++round)
+		for (unsigned round = 0; round < optNumRounds; ++round)
 		{
 			if ((round % 100) == 0)
 			{
-				std::printf("Executing seed %u round %u...\n", seed, round);
+				std::printf("Executing seed %u round %u/%u...\n", seed, round, optNumRounds);
 				std::fflush(stdout);
 			}
 
