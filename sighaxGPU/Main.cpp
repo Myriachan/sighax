@@ -1,6 +1,7 @@
 #include "cuda_runtime.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -127,7 +128,7 @@ public:
 		mpz_clear(m_gmp);
 	}
 
-	operator std::remove_extent_t<mpz_t> *() { return m_gmp; }
+	operator std::remove_extent<mpz_t>::type *() { return m_gmp; }
 
 private:
 	mpz_t m_gmp;
@@ -224,7 +225,7 @@ struct GetByteFromArrayWrapper
 	{
 	}
 
-	unsigned char operator()(unsigned index)
+	unsigned char operator()(unsigned index) const
 	{
 		// unsigned char is allowed to alias in C/C++ rules.
 		static_assert((KEY_SIZE & (KEY_SIZE - 1)) == 0, "KEY_SIZE must be a power of 2");

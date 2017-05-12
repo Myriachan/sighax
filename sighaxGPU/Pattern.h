@@ -1,13 +1,21 @@
 #pragma once
 
+template <bool B>
+__attribute__((__noinline__)) __device__ __host__ bool ConstantValue()
+{
+	return B;
+}
+
 // Determine whether the given buffer is what we want.
 template <typename GetByteLambda>
-__device__ __host__ bool IsWhatWeWant(GetByteLambda &getByte)
+__device__ __host__ bool IsWhatWeWant(const GetByteLambda &getByte)
 {
 	// Test code - used when profiling so that we never find anything.
 #ifdef PROFILE_MODE
-	static volatile bool s_meow = false;
-	if (!s_meow) return false;
+	if (!ConstantValue<false>())
+	{
+		return false;
+	}
 #endif
 
 	// A match must begin with 00 02.
