@@ -24,6 +24,8 @@
 #include <ctime>
 #include <limits>
 
+#include "Pattern.h"
+
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
 	#define NOGDI
@@ -151,51 +153,23 @@ void ToLimbArray(mp_limb_t(&limbs)[S], mpz_t number)
 }
 
 
-// Testing flag.
-volatile bool g_meow = false;
-
-// Determine whether the given buffer is what we want.
-bool IsWhatWeWant(const mp_limb_t *limbs)
+// Wrapper class for reading bytes from a limb array.
+struct GetByteFromArrayWrapper
 {
-	// Test code - used when profiling so that we never find anything.
-#ifdef PROFILE_MODE
-	if (!g_meow) return false;
-#endif
+	GetByteFromArrayWrapper(const mp_limb_t *limbs)
+	:	m_limbs(limbs)
+	{
+	}
 
-	// For our own sanity, we use big-endian indexing here.
-	// It's much easier to conceptualize that way.
-	auto getByte = [&limbs](std::size_t index) -> const unsigned char &
+	unsigned char operator()(unsigned index) const
 	{
 		// unsigned char is allowed to alias in C/C++ rules.
 		static_assert((KEY_SIZE & (KEY_SIZE - 1)) == 0, "KEY_SIZE must be a power of 2");
-		return (reinterpret_cast<const unsigned char *>(limbs))[index ^ (KEY_SIZE - 1)];
-	};
-
-	// A match must begin with 00 02.
-	if ((getByte(0x00) != 0x00) || (getByte(0x01) != 0x02))
-	{
-		return false;
+		return (reinterpret_cast<const unsigned char *>(m_limbs))[index ^ (KEY_SIZE - 1)];
 	}
 
-	// Count how many nonzero bytes are after the 0x02.
-	unsigned zeroIndex;
-	for (zeroIndex = 0x02; zeroIndex < KEY_SIZE; ++zeroIndex)
-	{
-		if (getByte(zeroIndex) == 0x00)
-		{
-			break;
-		}
-	}
-
-	if (zeroIndex >= KEY_SIZE)
-	{
-		return false;
-	}
-
-	// TODO: Rest of implementation.
-
-	return true;
-}
+	const mp_limb_t *m_limbs;
+};
 
 
 void BruteForce(mpz_t mpzModulus, mpz_t mpzRoot, mpz_t mpzBlock, unsigned long long numIterations)
@@ -322,7 +296,7 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzRoot, mpz_t mpzBlock, unsigned long l
 		// TODO: A very slightly faster implementation would be to check whether the highest
 		// limb could possibly be 0x0002____ when negated, avoiding subtraction.  This can
 		// only happen when the highest limb is 0xDECD____ or 0xDECC____.
-		if (IsWhatWeWant(next))
+		if (IsWhatWeWant(GetByteFromArrayWrapper(next)))
 		{
 			match = &next;
 			negative = false;
@@ -331,7 +305,7 @@ void BruteForce(mpz_t mpzModulus, mpz_t mpzRoot, mpz_t mpzBlock, unsigned long l
 		{
 			// Calculate the negative mod modulus.
 			mpn_sub_n(prev, modulus, next, KEY_LIMB_SIZE);
-			if (IsWhatWeWant(prev))
+			if (IsWhatWeWant(GetByteFromArrayWrapper(prev)))
 			{
 				match = &prev;
 				negative = true;
@@ -441,7 +415,7 @@ int main()
 #ifdef PROFILE_MODE
 	Profile(BruteForce, modulus, root, block);
 #else
-	BruteForce(modulus, root, block, 10000000);
+	BruteForce(modulus, root, block, -1LL);
 #endif
 
 	mpz_clears(modulus, root, block, nullptr);
