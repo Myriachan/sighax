@@ -1,7 +1,7 @@
 #pragma once
 
 template <bool B>
-__attribute__((__noinline__)) __device__ __host__ bool ConstantValue()
+__device__ __host__ bool ConstantValue()
 {
 	return B;
 }

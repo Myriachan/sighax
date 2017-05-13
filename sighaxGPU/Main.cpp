@@ -8,7 +8,7 @@
 #include <type_traits>
 
 #include "Shared.h"
-#include "Pattern.h"
+#include "../Moduli/Pattern.h"
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601

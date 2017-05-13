@@ -103,7 +103,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Pattern.h" />
+    <ClInclude Include="..\Moduli\Pattern.h" />
     <ClInclude Include="Shared.h" />
   </ItemGroup>
   <ItemGroup>

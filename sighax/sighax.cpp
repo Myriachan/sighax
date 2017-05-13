@@ -24,7 +24,9 @@
 #include <ctime>
 #include <limits>
 
-#include "Pattern.h"
+#define __device__
+#define __host__
+#include "../Moduli/Pattern.h"
 
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601

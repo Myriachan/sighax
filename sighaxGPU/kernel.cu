@@ -7,7 +7,7 @@
 #include <cstring>
 
 #include "Shared.h"
-#include "Pattern.h"
+#include "../Moduli/Pattern.h"
 
 
 // The GPU code.
