@@ -431,7 +431,7 @@ int main(int, char **argv)
 	cudaError_t cudaStatus = gpu.Initialize(optDevice);
 	if (cudaStatus != cudaSuccess)
 	{
-		std::fprintf(stderr, "GPUState::Initialize failed (%d)!\n", static_cast<int>(cudaStatus));
+		std::fprintf(stderr, "GPUState::Initialize failed (%d)!\n%s\n", static_cast<int>(cudaStatus), cudaGetErrorString(cudaStatus));
 		return 1;
 	}
 
@@ -492,7 +492,7 @@ int main(int, char **argv)
 			cudaStatus = gpu.Execute(round & 1, buffer, matchFound);
 			if (cudaStatus != cudaSuccess)
 			{
-				std::printf("GPUExecuteOperation failed: %d\n", static_cast<int>(cudaStatus));
+				std::printf("GPUExecuteOperation failed (%d)!\n%s\n", static_cast<int>(cudaStatus), cudaGetErrorString(cudaStatus));
 				goto done;
 			}
 
@@ -531,7 +531,7 @@ done:
 	// tracing tools such as Nsight and Visual Profiler to show complete traces.
 	cudaStatus = cudaDeviceReset();
 	if (cudaStatus != cudaSuccess) {
-		std::fprintf(stderr, "cudaDeviceReset failed (%d)!\n", static_cast<int>(cudaStatus));
+		std::fprintf(stderr, "cudaDeviceReset failed (%d)!\n%s\n", static_cast<int>(cudaStatus), cudaGetErrorString(cudaStatus));
 		return 1;
 	}
 
