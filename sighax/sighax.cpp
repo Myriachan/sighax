@@ -24,10 +24,6 @@
 #include <ctime>
 #include <limits>
 
-#define __device__
-#define __host__
-#include "../Moduli/Pattern.h"
-
 #ifdef _WIN32
 	#define _WIN32_WINNT 0x0601
 	#define NOGDI
@@ -57,6 +53,10 @@ enum : unsigned
 };
 
 static_assert(KEY_BITS % std::numeric_limits<mp_limb_t>::digits == 0, "bad mp_limb_t size");
+
+#define __device__
+#define __host__
+#include "../Moduli/Pattern.h"
 
 // Useful types.
 typedef mp_limb_t Single[KEY_LIMB_SIZE];
