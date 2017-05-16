@@ -93,13 +93,13 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <CodeGeneration>compute_50,sm_50</CodeGeneration>
+      <MaxRegCount>128</MaxRegCount>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu">
       <AdditionalDeps Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Shared.h</AdditionalDeps>
       <AdditionalDeps Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Shared.h</AdditionalDeps>
-      <MaxRegCount Condition="'$(Configuration)|$(Platform)'=='Release|x64'">128</MaxRegCount>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
