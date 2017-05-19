@@ -118,7 +118,18 @@ __device__ __host__ bool IsWhatWeWant(const GetByteLambda &getByte)
 		return false;
 	}
 
-	// Finally, check the offset as being 2 from the end.
+	// Check the offset as being 2 from the end.
 	unsigned final = finalIndex + secondNumValue;
-	return final == KEY_SIZE - 2;
+	if (final != KEY_SIZE - 2)
+	{
+		return false;
+	}
+
+	// The last byte has to be 00-80 or things break.
+	if (getByte(KEY_SIZE - 1) >= 0x81)
+	{
+		return false;
+	}
+
+	return true;
 }
