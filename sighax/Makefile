@@ -9,5 +9,5 @@ OBJS = sighax.o
 sighax: $(OBJS)
 	$(LD) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
-%.o: %.cpp
+%.o: %.cpp ../Moduli/Pattern.h
 	$(CC) -c -o $@ $< $(CFLAGS) $(CXXFLAGS)
